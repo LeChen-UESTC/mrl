@@ -2,7 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-source /Users/bytedance/.pyenv/versions/3.10.15/envs/env310/bin/activate
+eval "$(conda shell.bash hook)"
+conda activate cl
 
 EXTRA="audio"
 NPROC_PER_NODE="${NPROC_PER_NODE:-8}"

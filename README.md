@@ -1,30 +1,6 @@
-# Qwen2.5-Omni Gram-Volume Retrieval
+# Gram-Volume Retrieval Based on Qwen2.5-Omni
 
-This project fine-tunes the Qwen2.5-Omni Thinker with LoRA for multimodal embedding and retrieval. The multimodal encoders are frozen. The trainable parts are LoRA adapters on `q_proj/k_proj/v_proj/o_proj` and an optional projection head.
-
-## Layout
-
-```text
-configs/      Preprocess, train, and eval configs
-scripts/      Python entrypoints
-scripts_sh/   Shell wrappers
-src/          Python package
-data_cache/   Generated processor-input cache
-outputs/      Adapters, projection heads, and metrics
-```
-
-## Projection Modes
-
-Set `projection.mode` in the train/eval config:
-
-```yaml
-projection:
-  mode: shared      # none, shared, or per_modality
-  embed_dim: 1024
-  normalize: true
-```
-
-`none` uses the final hidden state directly. `shared` uses one linear head for all modalities. `per_modality` uses one linear head per modality.
+This project fine-tunes the Qwen2.5-Omni Thinker with LoRA for multimodal embedding and retrieval. The trainable parts are LoRA adapters on `q_proj/k_proj/v_proj/o_proj` and an optional projection head.
 
 ## Preprocess
 
@@ -104,7 +80,8 @@ The loss is symmetric over local anchors against global candidates and global an
 The shell scripts activate:
 
 ```bash
-source /Users/bytedance/.pyenv/versions/3.10.15/envs/env310/bin/activate
+eval "$(conda shell.bash hook)"
+conda activate cl
 ```
 
 No script installs or modifies dependencies.

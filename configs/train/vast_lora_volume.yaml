@@ -17,7 +17,7 @@ lora:
   bias: none
 
 projection:
-  mode: shared
+  mode: shared # none / shared / per_modality
   embed_dim: 1024
   normalize: true
 
