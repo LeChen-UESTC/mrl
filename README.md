@@ -18,7 +18,7 @@ bash scripts_sh/preprocess_vast.sh --nframes 8
 bash scripts_sh/preprocess_downstreams.sh --nframes 8
 ```
 
-Omit `--nframes` for the default Qwen processor sampling. When `--nframes 8` is set, cache directories are written with an `_n_frames_8` suffix, for example `data_cache/vast_train_n_frames_8`.
+Omit `--nframes` for the default Qwen processor sampling. When `--nframes 8` is set, cache directories are written with an `_n_frames_8` suffix, for example `/mnt/d/cl/mrl/data_cache/vast_train_n_frames_8`.
 
 ## Train
 
@@ -32,7 +32,7 @@ bash scripts_sh/train_vast.sh --extra audio,subtitle,vast_cap
 
 ```bash
 bash scripts_sh/eval_msrvtt.sh \
-  --checkpoint_dir /Users/bytedance/Qwen2.5Omni/outputs/vast_lora_volume/step_0000500 \
+  --checkpoint_dir /mnt/d/cl/mrl/outputs/vast_lora_volume/step_0000500 \
   --query vision_cap \
   --target video \
   --aux audio

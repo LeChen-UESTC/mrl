@@ -14,7 +14,7 @@ processor:
   local_files_only: true
 
 cache:
-  output_dir: /Users/bytedance/Qwen2.5Omni/data_cache/vast_train
+  output_dir: /mnt/d/cl/mrl/data_cache/vast_train
   shard_size: 64
   required_modalities:
     - vision_cap

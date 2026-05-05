@@ -14,7 +14,7 @@ processor:
   local_files_only: true
 
 cache:
-  output_dir: /Users/bytedance/Qwen2.5Omni/data_cache/vatex_test
+  output_dir: /mnt/d/cl/mrl/data_cache/vatex_test
   shard_size: 64
   required_modalities:
     - vision_cap

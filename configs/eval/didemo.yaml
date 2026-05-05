@@ -19,8 +19,8 @@ loss:
 
 eval:
   name: didemo
-  cache_dir: /Users/bytedance/Qwen2.5Omni/data_cache/didemo_test
-  checkpoint_dir: /Users/bytedance/Qwen2.5Omni/outputs/vast_lora_volume/step_0000000
+  cache_dir: /mnt/d/cl/mrl/data_cache/didemo_test
+  checkpoint_dir: /mnt/d/cl/mrl/outputs/vast_lora_volume/step_0000000
   query_modality: vision_cap
   target_modality: video
   auxiliary_modalities:
@@ -29,4 +29,4 @@ eval:
   caption_selection: random
   batch_size: 1
   num_workers: 2
-  output_json: /Users/bytedance/Qwen2.5Omni/outputs/eval_didemo.json
+  output_json: /mnt/d/cl/mrl/outputs/eval_didemo.json
