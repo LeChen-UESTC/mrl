@@ -22,6 +22,7 @@ from qwen_omni_retrieval.data.modality import (
 )
 from qwen_omni_retrieval.data.sampler import DistributedEvalSampler
 from qwen_omni_retrieval.evaluation.retrieval import evaluate_retrieval_from_embeddings
+from qwen_omni_retrieval.losses.contrastive import resolve_loss_mode
 from qwen_omni_retrieval.models.projection import ProjectionHead
 from qwen_omni_retrieval.models.qwen_thinker import infer_hidden_size, load_qwen_thinker_and_processor
 from qwen_omni_retrieval.models.retrieval_model import QwenOmniRetrievalModel
@@ -46,6 +47,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--query")
     parser.add_argument("--target")
     parser.add_argument("--aux", default=None)
+    parser.add_argument("--loss_mode", choices=["inverse_volume", "neg_log", "cosine"], default=None)
     parser.add_argument("--output_json")
     return parser.parse_args()
 
@@ -102,6 +104,9 @@ def run_eval(cfg: dict[str, Any], model: Any, processor: Any, device: torch.devi
     query_modality = eval_cfg["query_modality"]
     target_modality = eval_cfg["target_modality"]
     auxiliary_modalities = parse_modalities(eval_cfg.get("auxiliary_modalities", []))
+    loss_mode = resolve_loss_mode(cfg.get("loss", {}))
+    if loss_mode == "cosine":
+        auxiliary_modalities = []
     required = required_eval_modalities(query_modality, target_modality, auxiliary_modalities)
     validate_modalities(required, dataset_name=dataset_name, allow_vast_cap=dataset_name.lower() == "vast")
 
@@ -161,6 +166,7 @@ def run_eval(cfg: dict[str, Any], model: Any, processor: Any, device: torch.devi
         auxiliary_embeddings=aux_embeddings,
         query_ids=ids,
         target_ids=ids,
+        mode=loss_mode,
         score_mode=loss_cfg.get("score_mode", "inverse_volume"),
         scale=float(loss_cfg.get("volume_scale", 10.0)),
         temperature=float(loss_cfg.get("temperature", 1.0)),
@@ -179,6 +185,9 @@ def main() -> None:
         cfg["eval"]["target_modality"] = args.target
     if args.aux is not None:
         cfg["eval"]["auxiliary_modalities"] = parse_modalities(args.aux)
+    if args.loss_mode is not None:
+        cfg.setdefault("loss", {})["mode"] = args.loss_mode
+        cfg["loss"]["score_mode"] = args.loss_mode
     if args.output_json:
         cfg["eval"]["output_json"] = args.output_json
 

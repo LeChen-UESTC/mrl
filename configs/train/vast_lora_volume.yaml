@@ -22,6 +22,7 @@ projection:
   normalize: true
 
 loss:
+  mode: inverse_volume # inverse_volume / neg_log / cosine
   score_mode: inverse_volume
   volume_scale: 10.0
   volume_eps: 1.0e-6

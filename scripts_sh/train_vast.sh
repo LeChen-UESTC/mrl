@@ -10,6 +10,7 @@ NPROC_PER_NODE="${NPROC_PER_NODE:-8}"
 CONFIG="${ROOT_DIR}/configs/train/vast_lora_volume.yaml"
 OUTPUT_DIR=""
 EVAL_STEPS=""
+LOSS_MODE=""
 WANDB_MODE=""
 
 while [[ $# -gt 0 ]]; do
@@ -34,6 +35,10 @@ while [[ $# -gt 0 ]]; do
       EVAL_STEPS="$2"
       shift 2
       ;;
+    --loss_mode)
+      LOSS_MODE="$2"
+      shift 2
+      ;;
     --wandb_mode)
       WANDB_MODE="$2"
       shift 2
@@ -51,6 +56,9 @@ if [[ -n "${OUTPUT_DIR}" ]]; then
 fi
 if [[ -n "${EVAL_STEPS}" ]]; then
   ARGS+=(--eval_steps "${EVAL_STEPS}")
+fi
+if [[ -n "${LOSS_MODE}" ]]; then
+  ARGS+=(--loss_mode "${LOSS_MODE}")
 fi
 if [[ -n "${WANDB_MODE}" ]]; then
   ARGS+=(--wandb_mode "${WANDB_MODE}")

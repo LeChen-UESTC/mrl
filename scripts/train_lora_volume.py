@@ -24,7 +24,7 @@ from qwen_omni_retrieval.data.modality import (
 )
 from qwen_omni_retrieval.data.sampler import DistributedEvalSampler
 from qwen_omni_retrieval.evaluation.retrieval import evaluate_retrieval_from_embeddings
-from qwen_omni_retrieval.losses.contrastive import symmetric_gram_contrastive_loss
+from qwen_omni_retrieval.losses.contrastive import resolve_loss_mode, symmetric_contrastive_loss
 from qwen_omni_retrieval.models.lora import apply_lora, trainable_parameter_summary
 from qwen_omni_retrieval.models.projection import ProjectionHead
 from qwen_omni_retrieval.models.qwen_thinker import infer_hidden_size, load_qwen_thinker_and_processor
@@ -53,6 +53,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--extra_modalities", default=None)
     parser.add_argument("--output_dir", default=None)
     parser.add_argument("--eval_steps", type=int, default=None)
+    parser.add_argument("--loss_mode", choices=["inverse_volume", "neg_log", "cosine"], default=None)
     parser.add_argument("--wandb_mode", default=None)
     return parser.parse_args()
 
@@ -165,6 +166,8 @@ def evaluate_one_dataset(
     query_modality = eval_cfg["query_modality"]
     target_modality = eval_cfg["target_modality"]
     auxiliary_modalities = parse_modalities(eval_cfg.get("auxiliary_modalities", []))
+    if resolve_loss_mode(loss_cfg) == "cosine":
+        auxiliary_modalities = []
     required = required_eval_modalities(query_modality, target_modality, auxiliary_modalities)
     validate_modalities(required, dataset_name=dataset_name, allow_vast_cap=allow_vast_cap)
 
@@ -223,6 +226,7 @@ def evaluate_one_dataset(
         auxiliary_embeddings=aux_embeddings,
         query_ids=ids,
         target_ids=ids,
+        mode=resolve_loss_mode(loss_cfg),
         score_mode=loss_cfg.get("score_mode", "inverse_volume"),
         scale=float(loss_cfg.get("volume_scale", 10.0)),
         temperature=float(loss_cfg.get("temperature", 1.0)),
@@ -291,6 +295,9 @@ def main() -> None:
         cfg["training"]["output_dir"] = args.output_dir
     if args.eval_steps is not None:
         cfg["training"]["eval_steps"] = args.eval_steps
+    if args.loss_mode is not None:
+        cfg.setdefault("loss", {})["mode"] = args.loss_mode
+        cfg["loss"]["score_mode"] = args.loss_mode
     if args.wandb_mode is not None:
         cfg.setdefault("wandb", {})["mode"] = args.wandb_mode
 
@@ -299,12 +306,14 @@ def main() -> None:
         set_seed(int(cfg["training"].get("seed", 42)) + rank)
         dataset_name = cfg["training"].get("dataset_name", "vast")
         extra_modalities = parse_modalities(cfg["training"].get("extra_modalities", []))
+        loss_mode = resolve_loss_mode(cfg.get("loss", {}))
         validate_train_extra_modalities(
             extra_modalities,
             dataset_name=dataset_name,
             allow_vast_cap=dataset_name.lower() == "vast",
         )
-        train_modalities = required_train_modalities(extra_modalities)
+        active_extra_modalities = [] if loss_mode == "cosine" else extra_modalities
+        train_modalities = required_train_modalities(active_extra_modalities)
 
         model, processor = build_model(cfg, device)
         if is_main_process():
@@ -360,11 +369,11 @@ def main() -> None:
                 }
                 embeddings = model(modality_inputs)
 
-                candidates = [embeddings["video"], *[embeddings[mod] for mod in extra_modalities]]
-                loss, stats = symmetric_gram_contrastive_loss(
+                candidates = [embeddings["video"], *[embeddings[mod] for mod in active_extra_modalities]]
+                loss, stats = symmetric_contrastive_loss(
                     embeddings["vision_cap"],
                     candidates,
-                    score_mode=loss_cfg.get("score_mode", "inverse_volume"),
+                    mode=resolve_loss_mode(loss_cfg),
                     scale=float(loss_cfg.get("volume_scale", 10.0)),
                     temperature=float(loss_cfg.get("temperature", 1.0)),
                     eps=float(loss_cfg.get("volume_eps", 1.0e-6)),
