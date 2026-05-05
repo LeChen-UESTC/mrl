@@ -21,6 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--audio_dir")
     parser.add_argument("--output_dir")
     parser.add_argument("--modalities", help="Comma separated modalities to cache.")
+    parser.add_argument("--nframes", type=int, help="Fixed number of video frames. Omit for no frame limit.")
     parser.add_argument("--use_audio_in_video", choices=["true", "false"])
     return parser.parse_args()
 
@@ -38,6 +39,8 @@ def main() -> None:
         cfg["cache"]["output_dir"] = args.output_dir
     if args.modalities is not None:
         cfg["cache"]["modalities_to_cache"] = parse_modalities(args.modalities)
+    if args.nframes is not None:
+        cfg.setdefault("video", {})["nframes"] = args.nframes
     if args.use_audio_in_video is not None:
         cfg["dataset"]["use_audio_in_video"] = args.use_audio_in_video == "true"
 

@@ -17,15 +17,42 @@ SYSTEM_PROMPT = (
 )
 
 
-def build_messages(modality: str, payload: str) -> list[dict[str, Any]]:
+def normalize_nframes(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    nframes = int(value)
+    if nframes <= 0:
+        raise ValueError(f"nframes must be a positive integer when set, got {nframes}.")
+    return nframes
+
+
+def output_dir_with_frame_suffix(output_dir: str | Path, nframes: int | None) -> Path:
+    output_path = Path(output_dir)
+    if nframes is None:
+        return output_path
+    suffix = f"_n_frames_{nframes}"
+    if output_path.name.endswith(suffix):
+        return output_path
+    return output_path.with_name(f"{output_path.name}{suffix}")
+
+
+def build_messages(
+    modality: str,
+    payload: str,
+    *,
+    video_nframes: int | None = None,
+) -> list[dict[str, Any]]:
     if modality in TEXT_MODALITIES:
         content = [
             {"type": "text", "text": payload},
             {"type": "text", "text": "Conclude above text in one word:"},
         ]
     elif modality == "video":
+        video_item: dict[str, Any] = {"type": "video", "video": payload}
+        if video_nframes is not None:
+            video_item["nframes"] = video_nframes
         content = [
-            {"type": "video", "video": payload},
+            video_item,
             {"type": "text", "text": "Conclude above video in one word:"},
         ]
     elif modality == "audio":
@@ -93,6 +120,8 @@ def preprocess_dataset(config: dict[str, Any]) -> dict[str, Any]:
     dataset_cfg = config["dataset"]
     processor_cfg = config["processor"]
     cache_cfg = config["cache"]
+    video_cfg = config.get("video", {})
+    video_nframes = normalize_nframes(video_cfg.get("nframes"))
 
     dataset_name = dataset_cfg.get("name", "")
     allow_vast_cap = dataset_name.lower() == "vast"
@@ -101,7 +130,7 @@ def preprocess_dataset(config: dict[str, Any]) -> dict[str, Any]:
     validate_modalities(modalities, dataset_name=dataset_name, allow_vast_cap=allow_vast_cap)
     validate_modalities(required_modalities, dataset_name=dataset_name, allow_vast_cap=allow_vast_cap)
 
-    output_dir = Path(cache_cfg["output_dir"])
+    output_dir = output_dir_with_frame_suffix(cache_cfg["output_dir"], video_nframes)
     shard_dir = output_dir / "shards"
     shard_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = output_dir / "manifest.jsonl"
@@ -171,7 +200,11 @@ def preprocess_dataset(config: dict[str, Any]) -> dict[str, Any]:
                         modality_use_audio = use_audio_in_video if modality == "video" else False
                         item[modality] = processor_inputs_for_messages(
                             processor,
-                            build_messages(modality, str(payload)),
+                            build_messages(
+                                modality,
+                                str(payload),
+                                video_nframes=video_nframes if modality == "video" else None,
+                            ),
                             use_audio_in_video=modality_use_audio,
                         )
                 except Exception as exc:
@@ -192,6 +225,7 @@ def preprocess_dataset(config: dict[str, Any]) -> dict[str, Any]:
                 "video_path": media.video_path,
                 "audio_path": media.audio_path,
                 "use_audio_in_video": media.use_audio_in_video,
+                "nframes": video_nframes,
                 "available_modalities": sorted(item.keys()),
                 "cache_shard": f"shards/{shard_name}",
                 "cache_key": cache_key,
@@ -210,6 +244,7 @@ def preprocess_dataset(config: dict[str, Any]) -> dict[str, Any]:
         "records_skipped": len(skipped),
         "modalities_to_cache": modalities,
         "required_modalities": required_modalities,
+        "nframes": video_nframes,
         "manifest_path": str(manifest_path),
         "shard_count": shard_idx,
         "skipped_examples": skipped[:20],

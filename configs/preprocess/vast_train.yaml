@@ -6,6 +6,9 @@ dataset:
   use_audio_in_video: true
   audio_from_video_if_missing: true
 
+video:
+  nframes:
+
 processor:
   processor_path: /mnt/d/cl/Qwen2.5-Omni/processor
   local_files_only: true
