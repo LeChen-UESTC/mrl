@@ -16,6 +16,8 @@ processor:
 cache:
   output_dir: /mnt/d/cl/mrl/data_cache/didemo_test
   shard_size: 64
+  log_every: 100
+  max_samples:
   required_modalities:
     - vision_cap
     - video

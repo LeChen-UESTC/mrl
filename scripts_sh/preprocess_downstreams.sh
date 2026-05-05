@@ -6,11 +6,21 @@ eval "$(conda shell.bash hook)"
 conda activate cl
 
 NFRAMES=""
+MAX_SAMPLES=""
+LOG_EVERY=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --nframes)
       NFRAMES="$2"
+      shift 2
+      ;;
+    --max_samples)
+      MAX_SAMPLES="$2"
+      shift 2
+      ;;
+    --log_every)
+      LOG_EVERY="$2"
       shift 2
       ;;
     *)
@@ -23,6 +33,12 @@ done
 ARGS=()
 if [[ -n "${NFRAMES}" ]]; then
   ARGS+=(--nframes "${NFRAMES}")
+fi
+if [[ -n "${MAX_SAMPLES}" ]]; then
+  ARGS+=(--max_samples "${MAX_SAMPLES}")
+fi
+if [[ -n "${LOG_EVERY}" ]]; then
+  ARGS+=(--log_every "${LOG_EVERY}")
 fi
 
 python "${ROOT_DIR}/scripts/preprocess_dataset.py" \

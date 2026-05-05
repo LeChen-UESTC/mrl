@@ -18,6 +18,12 @@ bash scripts_sh/preprocess_vast.sh --nframes 8
 bash scripts_sh/preprocess_downstreams.sh --nframes 8
 ```
 
+Run a quick sanity check before full preprocessing:
+
+```bash
+bash scripts_sh/preprocess_vast.sh --nframes 8 --max_samples 10
+```
+
 Omit `--nframes` for the default Qwen processor sampling. When `--nframes 8` is set, cache directories are written with an `_n_frames_8` suffix, for example `/mnt/d/cl/mrl/data_cache/vast_train_n_frames_8`.
 
 ## Train

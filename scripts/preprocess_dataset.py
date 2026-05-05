@@ -22,6 +22,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output_dir")
     parser.add_argument("--modalities", help="Comma separated modalities to cache.")
     parser.add_argument("--nframes", type=int, help="Fixed number of video frames. Omit for no frame limit.")
+    parser.add_argument("--max_samples", type=int, help="Only preprocess the first N records for sanity checks.")
+    parser.add_argument("--log_every", type=int, help="Fallback progress log interval when tqdm is unavailable.")
     parser.add_argument("--use_audio_in_video", choices=["true", "false"])
     return parser.parse_args()
 
@@ -41,6 +43,10 @@ def main() -> None:
         cfg["cache"]["modalities_to_cache"] = parse_modalities(args.modalities)
     if args.nframes is not None:
         cfg.setdefault("video", {})["nframes"] = args.nframes
+    if args.max_samples is not None:
+        cfg["cache"]["max_samples"] = args.max_samples
+    if args.log_every is not None:
+        cfg["cache"]["log_every"] = args.log_every
     if args.use_audio_in_video is not None:
         cfg["dataset"]["use_audio_in_video"] = args.use_audio_in_video == "true"
 

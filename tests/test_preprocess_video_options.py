@@ -8,7 +8,9 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from qwen_omni_retrieval.data.preprocess import (
     build_messages,
+    normalize_log_every,
     normalize_nframes,
+    normalize_optional_positive_int,
     output_dir_with_frame_suffix,
 )
 
@@ -35,8 +37,23 @@ def test_output_dir_gets_frame_suffix_once() -> None:
     assert output_dir_with_frame_suffix("/tmp/vast_train", None) == Path("/tmp/vast_train")
 
 
+def test_optional_positive_int_parsing() -> None:
+    assert normalize_optional_positive_int(None, name="max_samples") is None
+    assert normalize_optional_positive_int("", name="max_samples") is None
+    assert normalize_optional_positive_int("10", name="max_samples") == 10
+
+
+def test_log_every_parsing() -> None:
+    assert normalize_log_every(None) == 100
+    assert normalize_log_every("") == 100
+    assert normalize_log_every("0") == 0
+    assert normalize_log_every("25") == 25
+
+
 if __name__ == "__main__":
     test_nframes_none_means_no_limit()
     test_video_message_can_carry_nframes()
     test_output_dir_gets_frame_suffix_once()
+    test_optional_positive_int_parsing()
+    test_log_every_parsing()
     print("ok")
