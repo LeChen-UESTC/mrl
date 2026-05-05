@@ -25,6 +25,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max_samples", type=int, help="Only preprocess the first N records for sanity checks.")
     parser.add_argument("--log_every", type=int, help="Fallback progress log interval when tqdm is unavailable.")
     parser.add_argument("--use_audio_in_video", choices=["true", "false"])
+    parser.add_argument("--cache_media_features", choices=["true", "false"])
+    parser.add_argument("--cache_raw_processor_tensors", choices=["true", "false"])
+    parser.add_argument("--feature_dtype", choices=["fp16", "bf16", "fp32"])
     return parser.parse_args()
 
 
@@ -49,6 +52,12 @@ def main() -> None:
         cfg["cache"]["log_every"] = args.log_every
     if args.use_audio_in_video is not None:
         cfg["dataset"]["use_audio_in_video"] = args.use_audio_in_video == "true"
+    if args.cache_media_features is not None:
+        cfg["cache"]["cache_media_features"] = args.cache_media_features == "true"
+    if args.cache_raw_processor_tensors is not None:
+        cfg["cache"]["cache_raw_processor_tensors"] = args.cache_raw_processor_tensors == "true"
+    if args.feature_dtype is not None:
+        cfg["cache"]["feature_dtype"] = args.feature_dtype
 
     summary = preprocess_dataset(cfg)
     print(summary)

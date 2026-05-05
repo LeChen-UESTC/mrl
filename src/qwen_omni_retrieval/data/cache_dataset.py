@@ -8,6 +8,8 @@ from typing import Any
 import torch
 from torch.utils.data import Dataset
 
+from qwen_omni_retrieval.data.serialization import decode_jsonable
+
 
 class CachedRetrievalDataset(Dataset):
     def __init__(
@@ -40,17 +42,56 @@ class CachedRetrievalDataset(Dataset):
         self.rows = rows
         self._loaded_shard_path: Path | None = None
         self._loaded_shard: dict[str, Any] | None = None
+        self._loaded_token_shard_path: Path | None = None
+        self._loaded_token_shard: dict[str, Any] | None = None
+        self._loaded_feature_shard_path: Path | None = None
+        self._loaded_feature_shard: dict[str, Any] | None = None
 
     def __len__(self) -> int:
         return len(self.rows)
 
-    def _load_item(self, row: dict[str, Any]) -> dict[str, Any]:
+    def _load_legacy_item(self, row: dict[str, Any]) -> dict[str, Any]:
         shard_path = self.cache_dir / row["cache_shard"]
         if self._loaded_shard_path != shard_path:
             self._loaded_shard = torch.load(shard_path, map_location="cpu")
             self._loaded_shard_path = shard_path
         assert self._loaded_shard is not None
         return self._loaded_shard[row["cache_key"]]
+
+    def _load_token_item(self, row: dict[str, Any]) -> dict[str, Any]:
+        shard_path = self.cache_dir / row["token_shard"]
+        if self._loaded_token_shard_path != shard_path:
+            loaded: dict[str, Any] = {}
+            with shard_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    item = json.loads(line)
+                    loaded[item["cache_key"]] = decode_jsonable(item["modalities"])
+            self._loaded_token_shard = loaded
+            self._loaded_token_shard_path = shard_path
+        assert self._loaded_token_shard is not None
+        return self._loaded_token_shard[row["cache_key"]]
+
+    def _load_feature_item(self, row: dict[str, Any]) -> dict[str, Any]:
+        feature_shard = row.get("feature_shard")
+        if not feature_shard:
+            return {}
+        shard_path = self.cache_dir / feature_shard
+        if self._loaded_feature_shard_path != shard_path:
+            self._loaded_feature_shard = torch.load(shard_path, map_location="cpu")
+            self._loaded_feature_shard_path = shard_path
+        assert self._loaded_feature_shard is not None
+        return self._loaded_feature_shard.get(row["cache_key"], {})
+
+    def _load_item(self, row: dict[str, Any]) -> dict[str, Any]:
+        if "cache_shard" in row:
+            return self._load_legacy_item(row)
+        item = self._load_token_item(row)
+        feature_item = self._load_feature_item(row)
+        for modality, modality_features in feature_item.items():
+            item.setdefault(modality, {}).update(modality_features)
+        return item
 
     def _select_caption(self, candidates: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
         if not candidates:

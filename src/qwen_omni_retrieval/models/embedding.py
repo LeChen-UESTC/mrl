@@ -34,22 +34,26 @@ def thinker_final_hidden_state(
     inputs_embeds = base.get_input_embeddings()(input_ids)
 
     with torch.no_grad():
-        if inputs.get("input_features") is not None:
+        audio_features = inputs.get("audio_features")
+        if audio_features is None and inputs.get("input_features") is not None:
             audio_features = base.get_audio_features(
                 input_features=inputs["input_features"],
                 feature_attention_mask=inputs.get("feature_attention_mask"),
                 return_dict=True,
             ).last_hidden_state
+        if audio_features is not None:
             audio_features = audio_features.to(inputs_embeds.device, inputs_embeds.dtype)
             _, _, audio_mask = base.get_placeholder_mask(input_ids, inputs_embeds=inputs_embeds)
             inputs_embeds = inputs_embeds.masked_scatter(audio_mask, audio_features)
 
-        if inputs.get("pixel_values") is not None:
+        image_features = inputs.get("image_features")
+        if image_features is None and inputs.get("pixel_values") is not None:
             image_features = base.get_image_features(
                 inputs["pixel_values"],
                 inputs["image_grid_thw"],
                 return_dict=True,
             ).pooler_output
+        if image_features is not None:
             image_features = image_features.to(inputs_embeds.device, inputs_embeds.dtype)
             image_mask, _, _ = base.get_placeholder_mask(
                 input_ids,
@@ -58,12 +62,14 @@ def thinker_final_hidden_state(
             )
             inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_features)
 
-        if inputs.get("pixel_values_videos") is not None:
+        video_features = inputs.get("video_features")
+        if video_features is None and inputs.get("pixel_values_videos") is not None:
             video_features = base.get_video_features(
                 inputs["pixel_values_videos"],
                 inputs["video_grid_thw"],
                 return_dict=True,
             ).pooler_output
+        if video_features is not None:
             video_features = video_features.to(inputs_embeds.device, inputs_embeds.dtype)
             _, video_mask, _ = base.get_placeholder_mask(
                 input_ids,

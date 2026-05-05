@@ -4,7 +4,10 @@ This project finetunes the Qwen2.5-Omni Thinker with LoRA for multimodal embeddi
 
 ## Preprocess
 
-The cache format is `manifest.jsonl + shards/*.pt`. The `.pt` shards contain processor tensors, so training does not repeat tokenization or media processing.
+The default cache format is `manifest.jsonl + text_tokens/*.jsonl + feature_shards/*.pt`.
+Token-side tensors such as `input_ids`, attention masks, and media grid metadata are stored as
+JSONL. Video/audio modalities store frozen encoder features in fp16 `.pt` shards, so training
+skips tokenization, media processing, and the frozen media encoders.
 
 ```bash
 bash scripts_sh/preprocess_vast.sh
@@ -25,6 +28,12 @@ bash scripts_sh/preprocess_vast.sh --nframes 8 --max_samples 10
 ```
 
 Omit `--nframes` for the default Qwen processor sampling. When `--nframes 8` is set, cache directories are written with an `_n_frames_8` suffix, for example `/mnt/d/cl/mrl/data_cache/vast_train_n_frames_8`.
+
+Change the stored media feature precision when needed:
+
+```bash
+bash scripts_sh/preprocess_vast.sh --nframes 8 --feature_dtype bf16
+```
 
 ## Train
 

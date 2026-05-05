@@ -5,11 +5,15 @@ from typing import Any
 import torch
 import torch.nn.functional as F
 
+MEDIA_FEATURE_KEYS = {"audio_features", "image_features", "video_features"}
+
 
 def _squeeze_known_batch_dim(key: str, tensor: torch.Tensor) -> torch.Tensor:
     if key in {"input_ids", "attention_mask", "feature_attention_mask"} and tensor.dim() >= 2:
         return tensor.squeeze(0)
     if key == "input_features" and tensor.dim() >= 3 and tensor.shape[0] == 1:
+        return tensor.squeeze(0)
+    if key in MEDIA_FEATURE_KEYS and tensor.dim() >= 3 and tensor.shape[0] == 1:
         return tensor.squeeze(0)
     return tensor
 
@@ -40,6 +44,8 @@ def _collate_tensor_key(key: str, tensors: list[torch.Tensor], pad_token_id: int
         return _pad_1d([t.long() for t in tensors], 0)
     if key == "input_features":
         return _pad_last_dim_and_stack([t.float() for t in tensors], 0)
+    if key in MEDIA_FEATURE_KEYS:
+        return torch.cat(tensors, dim=0)
     if key in {"pixel_values", "pixel_values_videos", "image_grid_thw", "video_grid_thw"}:
         return torch.cat(tensors, dim=0)
     if key == "video_second_per_grid":
