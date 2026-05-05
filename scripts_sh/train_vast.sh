@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-eval "$(conda shell.bash hook)"
-conda activate cl
+source /root/my_conda/etc/profile.d/conda.sh
+conda activate /root/my_conda/envs/cl
 
 EXTRA="audio"
 NPROC_PER_NODE="${NPROC_PER_NODE:-8}"
