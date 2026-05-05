@@ -1,0 +1,24 @@
+dataset:
+  name: vast
+  anno_path: /mnt/d/data/vast/train_silence_flitered_59603.json
+  video_dir: /mnt/d/data/vast/matched_video
+  audio_dir:
+  use_audio_in_video: true
+  audio_from_video_if_missing: true
+
+processor:
+  processor_path: /mnt/d/cl/Qwen2.5-Omni/processor
+  local_files_only: true
+
+cache:
+  output_dir: /Users/bytedance/Qwen2.5Omni/data_cache/vast_train
+  shard_size: 64
+  required_modalities:
+    - vision_cap
+    - video
+  modalities_to_cache:
+    - vision_cap
+    - video
+    - audio
+    - subtitle
+    - vast_cap

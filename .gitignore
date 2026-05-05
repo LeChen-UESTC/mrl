@@ -1,0 +1,10 @@
+data_cache/
+outputs/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
+wandb/

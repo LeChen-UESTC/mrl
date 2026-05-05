@@ -1,0 +1,8 @@
+[project]
+name = "qwen-omni-retrieval"
+version = "0.1.0"
+description = "LoRA fine-tuning for Qwen2.5-Omni multimodal Gram-volume retrieval."
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,23 @@
+dataset:
+  name: didemo
+  anno_path: /mnt/d/data/didemo/test_silence_flitered_998.json
+  video_dir: /mnt/d/data/didemo/video
+  audio_dir:
+  use_audio_in_video: true
+  audio_from_video_if_missing: true
+
+processor:
+  processor_path: /mnt/d/cl/Qwen2.5-Omni/processor
+  local_files_only: true
+
+cache:
+  output_dir: /Users/bytedance/Qwen2.5Omni/data_cache/didemo_test
+  shard_size: 64
+  required_modalities:
+    - vision_cap
+    - video
+  modalities_to_cache:
+    - vision_cap
+    - video
+    - audio
+    - subtitle

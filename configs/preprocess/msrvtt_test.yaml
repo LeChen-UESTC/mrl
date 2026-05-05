@@ -1,0 +1,23 @@
+dataset:
+  name: msrvtt
+  anno_path: /mnt/d/data/msrvtt/test_silence_flitered_884.json
+  video_dir: /mnt/d/data/msrvtt/data/all-video
+  audio_dir: /mnt/d/data/msrvtt/data/all-audio
+  use_audio_in_video: false
+  audio_from_video_if_missing: false
+
+processor:
+  processor_path: /mnt/d/cl/Qwen2.5-Omni/processor
+  local_files_only: true
+
+cache:
+  output_dir: /Users/bytedance/Qwen2.5Omni/data_cache/msrvtt_test
+  shard_size: 64
+  required_modalities:
+    - vision_cap
+    - video
+  modalities_to_cache:
+    - vision_cap
+    - video
+    - audio
+    - subtitle

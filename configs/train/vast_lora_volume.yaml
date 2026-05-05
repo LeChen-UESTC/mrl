@@ -1,0 +1,86 @@
+model:
+  model_path: /mnt/d/cl/Qwen2.5-Omni/model
+  processor_path: /mnt/d/cl/Qwen2.5-Omni/processor
+  local_files_only: true
+  attn_implementation: sdpa
+  torch_dtype: auto
+
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+  bias: none
+
+projection:
+  mode: shared
+  embed_dim: 1024
+  normalize: true
+
+loss:
+  score_mode: inverse_volume
+  volume_scale: 10.0
+  volume_eps: 1.0e-6
+  label_smoothing: 0.1
+  temperature: 1.0
+
+training:
+  dataset_name: vast
+  cache_dir: /Users/bytedance/Qwen2.5Omni/data_cache/vast_train
+  output_dir: /Users/bytedance/Qwen2.5Omni/outputs/vast_lora_volume
+  extra_modalities:
+    - audio
+  use_audio_in_video: true
+  caption_selection: random
+  batch_size: 1
+  eval_batch_size: 1
+  num_workers: 2
+  epochs: 1
+  max_steps: 0
+  learning_rate: 1.0e-4
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  eval_steps: 500
+  save_steps: 500
+  log_steps: 10
+  seed: 42
+  gradient_checkpointing: true
+
+eval_datasets:
+  - name: msrvtt
+    cache_dir: /Users/bytedance/Qwen2.5Omni/data_cache/msrvtt_test
+    query_modality: vision_cap
+    target_modality: video
+    auxiliary_modalities:
+      - audio
+    caption_selection: random
+    batch_size: 1
+    num_workers: 2
+  - name: didemo
+    cache_dir: /Users/bytedance/Qwen2.5Omni/data_cache/didemo_test
+    query_modality: vision_cap
+    target_modality: video
+    auxiliary_modalities:
+      - audio
+    caption_selection: random
+    batch_size: 1
+    num_workers: 2
+  - name: vatex
+    cache_dir: /Users/bytedance/Qwen2.5Omni/data_cache/vatex_test
+    query_modality: vision_cap
+    target_modality: video
+    auxiliary_modalities:
+      - audio
+    caption_selection: random
+    batch_size: 1
+    num_workers: 2
+
+wandb:
+  enabled: true
+  project: qwen-omni-retrieval
+  name: vast-lora-volume
+  mode:
