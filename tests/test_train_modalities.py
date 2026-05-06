@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from argparse import Namespace
 import sys
 from pathlib import Path
 
@@ -8,7 +9,42 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from qwen_omni_retrieval.data.modality import normalize_train_modalities, parse_modalities
-from train_lora_volume import resolve_training_modalities, training_loss_mode, training_text_anchor
+from train_lora_volume import (
+    apply_cli_overrides,
+    resolve_training_modalities,
+    total_train_steps,
+    training_loss_mode,
+    training_text_anchor,
+)
+
+
+def make_args(**overrides: object) -> Namespace:
+    defaults = {
+        "modality": None,
+        "extra_modalities": None,
+        "output_dir": None,
+        "epochs": None,
+        "max_steps": None,
+        "batch_size": None,
+        "eval_batch_size": None,
+        "num_workers": None,
+        "learning_rate": None,
+        "weight_decay": None,
+        "max_grad_norm": None,
+        "log_steps": None,
+        "save_steps": None,
+        "eval_steps": None,
+        "do_eval": None,
+        "loss_mode": None,
+        "wandb_mode": None,
+        "lora_r": None,
+        "lora_alpha": None,
+        "lora_dropout": None,
+        "lora_target_modules": None,
+        "lora_bias": None,
+    }
+    defaults.update(overrides)
+    return Namespace(**defaults)
 
 
 def test_parse_modalities_splits_list_items_with_commas() -> None:
@@ -66,6 +102,71 @@ def test_train_modalities_reject_missing_video_or_multiple_text_anchors() -> Non
         raise AssertionError("multiple text anchors should fail")
 
 
+def test_apply_cli_overrides_training_and_lora_args() -> None:
+    cfg = {
+        "training": {"modalities": ["vision_cap", "video"], "extra_modalities": ["audio"]},
+        "loss": {"mode": "inverse_volume"},
+        "wandb": {},
+        "lora": {"r": 16, "alpha": 32, "dropout": 0.05},
+    }
+    apply_cli_overrides(
+        cfg,
+        make_args(
+            modality=["video", "audio", "vision_cap"],
+            output_dir="/tmp/out",
+            epochs=3,
+            max_steps=10000,
+            batch_size=2,
+            eval_batch_size=4,
+            num_workers=6,
+            learning_rate=5.0e-5,
+            weight_decay=0.02,
+            max_grad_norm=0.5,
+            log_steps=5,
+            save_steps=250,
+            eval_steps=250,
+            do_eval="false",
+            loss_mode="neg_log",
+            wandb_mode="offline",
+            lora_r=32,
+            lora_alpha=64,
+            lora_dropout=0.1,
+            lora_target_modules=["q_proj", "v_proj"],
+            lora_bias="none",
+        ),
+    )
+
+    assert cfg["training"]["modalities"] == ["video", "audio", "vision_cap"]
+    assert "extra_modalities" not in cfg["training"]
+    assert cfg["training"]["output_dir"] == "/tmp/out"
+    assert cfg["training"]["epochs"] == 3
+    assert cfg["training"]["max_steps"] == 10000
+    assert cfg["training"]["batch_size"] == 2
+    assert cfg["training"]["eval_batch_size"] == 4
+    assert cfg["training"]["num_workers"] == 6
+    assert cfg["training"]["learning_rate"] == 5.0e-5
+    assert cfg["training"]["weight_decay"] == 0.02
+    assert cfg["training"]["max_grad_norm"] == 0.5
+    assert cfg["training"]["log_steps"] == 5
+    assert cfg["training"]["save_steps"] == 250
+    assert cfg["training"]["eval_steps"] == 250
+    assert cfg["training"]["do_eval"] is False
+    assert cfg["loss"]["mode"] == "neg_log"
+    assert cfg["loss"]["score_mode"] == "neg_log"
+    assert cfg["wandb"]["mode"] == "offline"
+    assert cfg["lora"]["r"] == 32
+    assert cfg["lora"]["alpha"] == 64
+    assert cfg["lora"]["dropout"] == 0.1
+    assert cfg["lora"]["target_modules"] == ["q_proj", "v_proj"]
+    assert cfg["lora"]["bias"] == "none"
+
+
+def test_total_train_steps_respects_epoch_count_and_step_cap() -> None:
+    assert total_train_steps(epochs=3, batches_per_epoch=100, max_steps=0) == 300
+    assert total_train_steps(epochs=3, batches_per_epoch=100, max_steps=120) == 120
+    assert total_train_steps(epochs=1, batches_per_epoch=100, max_steps=200) == 100
+
+
 if __name__ == "__main__":
     test_parse_modalities_splits_list_items_with_commas()
     test_train_modalities_are_ordered_by_text_anchor_and_video()
@@ -73,4 +174,6 @@ if __name__ == "__main__":
     test_training_loss_is_chosen_from_modality_count()
     test_resolve_training_modalities_prefers_modalities_config()
     test_train_modalities_reject_missing_video_or_multiple_text_anchors()
+    test_apply_cli_overrides_training_and_lora_args()
+    test_total_train_steps_respects_epoch_count_and_step_cap()
     print("ok")

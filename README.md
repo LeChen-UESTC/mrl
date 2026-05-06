@@ -10,48 +10,33 @@ JSONL. Video/audio modalities store frozen encoder features in fp16 `.pt` shards
 skips tokenization, media processing, and the frozen media encoders.
 
 ```bash
-bash scripts_sh/preprocess_vast.sh
-bash scripts_sh/preprocess_downstreams.sh
-```
-
-Set a fixed video frame count when matching a baseline:
-
-```bash
-bash scripts_sh/preprocess_vast.sh --nframes 8
-bash scripts_sh/preprocess_downstreams.sh --nframes 8
-```
-
-Run a quick sanity check before full preprocessing:
-
-```bash
-bash scripts_sh/preprocess_vast.sh --nframes 8 --max_samples 10
-```
-
-Omit `--nframes` for the default Qwen processor sampling. When `--nframes 8` is set, cache directories are written with an `_n_frames_8` suffix, for example `/mnt/d/cl/mrl/data_cache/vast_train_n_frames_8`.
-
-Change the stored media feature precision when needed:
-
-```bash
-bash scripts_sh/preprocess_vast.sh --nframes 8 --feature_dtype bf16
+bash scripts_sh/preprocess_vast.sh --nframes 2 --max_samples 10 --feature_dtype fp16
+bash scripts_sh/preprocess_downstreams.sh --nframes 8 --max_samples 10 --feature_dtype fp16
 ```
 
 ## Train
 
 ```bash
-CUDA_VISIBLE_DEVICES=0,1,2,3 \
+CUDA_VISIBLE_DEVICES=1,2,3,4 \
 NPROC_PER_NODE=4 \
-bash scripts_sh/train_vast.sh --modality video audio vision_cap
+bash scripts_sh/train_vast.sh \
+  --modality video audio vision_cap \
+  --epochs 3 \
+  --max_steps 10000 \
+  --learning_rate 5e-5 \
+  --batch_size 1 \
+  --lora_r 16 \
+  --lora_alpha 32 \
+  --lora_dropout 0.05 \
+  --do_eval false \
+  --wandb_mode offline
 ```
 
-Training modalities must contain `video` and exactly one text anchor, either `vision_cap` or
-`vast_cap`. Two modalities use cosine contrastive loss; three or four modalities use Gram-volume
-loss with the configured volume score mode.
-
-Disable periodic and final training-time evaluation when you only want to train/save:
-
-```bash
-bash scripts_sh/train_vast.sh --modality video vision_cap --do_eval false
-```
+`--epochs` controls full dataset passes. `--max_steps` caps total optimizer steps; set it to
+`0` or omit it for no step cap. Common runtime overrides also include `--eval_steps`,
+`--save_steps`, `--log_steps`, `--weight_decay`, `--max_grad_norm`, `--eval_batch_size`,
+`--num_workers`, `--lora_target_modules`, and `--lora_bias`. Rank 0 shows a tqdm training
+progress bar when `tqdm` is available; otherwise it falls back to `--log_steps` prints.
 
 During training-time evaluation, each eval dataset first tries `cache_dir/manifest.jsonl`.
 If that cache is missing or lacks the requested modalities, the script falls back to the raw

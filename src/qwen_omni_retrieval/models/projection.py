@@ -37,13 +37,22 @@ class ProjectionHead(nn.Module):
         else:
             raise ValueError("projection mode must be one of: none, shared, per_modality")
 
+    @staticmethod
+    def _align_input_dtype(hidden: torch.Tensor, head: nn.Module) -> torch.Tensor:
+        if isinstance(head, nn.Linear):
+            return hidden.to(dtype=head.weight.dtype)
+        return hidden
+
     def forward(self, hidden: torch.Tensor, modality: str) -> torch.Tensor:
         if self.mode == "per_modality":
             if self.heads is None or modality not in self.heads:
                 raise KeyError(f"No projection head registered for modality `{modality}`.")
-            out = self.heads[modality](hidden)
+            head = self.heads[modality]
+            out = head(self._align_input_dtype(hidden, head))
         else:
-            out = self.head(hidden)
+            assert self.head is not None
+            out = self.head(self._align_input_dtype(hidden, self.head))
+
         if self.normalize:
             out = F.normalize(out, dim=-1)
         return out

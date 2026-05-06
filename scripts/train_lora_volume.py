@@ -10,6 +10,11 @@ import torch
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader, DistributedSampler
 
+try:
+    from tqdm.auto import tqdm
+except ImportError:
+    tqdm = None
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
@@ -59,10 +64,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--modality", nargs="+", default=None)
     parser.add_argument("--extra_modalities", default=None)
     parser.add_argument("--output_dir", default=None)
+    parser.add_argument("--epochs", type=int, default=None)
+    parser.add_argument("--max_steps", type=int, default=None)
+    parser.add_argument("--batch_size", type=int, default=None)
+    parser.add_argument("--eval_batch_size", type=int, default=None)
+    parser.add_argument("--num_workers", type=int, default=None)
+    parser.add_argument("--learning_rate", type=float, default=None)
+    parser.add_argument("--weight_decay", type=float, default=None)
+    parser.add_argument("--max_grad_norm", type=float, default=None)
+    parser.add_argument("--log_steps", type=int, default=None)
+    parser.add_argument("--save_steps", type=int, default=None)
     parser.add_argument("--eval_steps", type=int, default=None)
     parser.add_argument("--do_eval", choices=["true", "false"], default=None)
     parser.add_argument("--loss_mode", choices=["inverse_volume", "neg_log", "cosine"], default=None)
     parser.add_argument("--wandb_mode", default=None)
+    parser.add_argument("--lora_r", type=int, default=None)
+    parser.add_argument("--lora_alpha", type=int, default=None)
+    parser.add_argument("--lora_dropout", type=float, default=None)
+    parser.add_argument("--lora_target_modules", nargs="+", default=None)
+    parser.add_argument("--lora_bias", default=None)
     return parser.parse_args()
 
 
@@ -145,6 +165,80 @@ def training_loss_mode(modalities: list[str], loss_cfg: dict[str, Any]) -> str:
         return "cosine"
     configured = resolve_loss_mode(loss_cfg)
     return configured if configured != "cosine" else "inverse_volume"
+
+
+def set_cli_override(args: argparse.Namespace, section: dict[str, Any], arg_name: str, cfg_name: str | None = None) -> None:
+    value = getattr(args, arg_name, None)
+    if value is not None:
+        section[cfg_name or arg_name] = value
+
+
+def apply_cli_overrides(cfg: dict[str, Any], args: argparse.Namespace) -> None:
+    training_cfg = cfg.setdefault("training", {})
+    if args.modality is not None and args.extra_modalities is not None:
+        raise ValueError("Use either `--modality` or legacy `--extra_modalities`, not both.")
+    if args.modality is not None:
+        training_cfg["modalities"] = parse_modalities(args.modality)
+        training_cfg.pop("extra_modalities", None)
+    elif args.extra_modalities is not None:
+        training_cfg["extra_modalities"] = parse_modalities(args.extra_modalities)
+
+    for arg_name in (
+        "output_dir",
+        "epochs",
+        "max_steps",
+        "batch_size",
+        "eval_batch_size",
+        "num_workers",
+        "learning_rate",
+        "weight_decay",
+        "max_grad_norm",
+        "log_steps",
+        "save_steps",
+        "eval_steps",
+    ):
+        set_cli_override(args, training_cfg, arg_name)
+    if args.do_eval is not None:
+        training_cfg["do_eval"] = args.do_eval == "true"
+
+    if args.loss_mode is not None:
+        loss_cfg = cfg.setdefault("loss", {})
+        loss_cfg["mode"] = args.loss_mode
+        loss_cfg["score_mode"] = args.loss_mode
+    if args.wandb_mode is not None:
+        cfg.setdefault("wandb", {})["mode"] = args.wandb_mode
+
+    lora_cfg = cfg.setdefault("lora", {})
+    set_cli_override(args, lora_cfg, "lora_r", "r")
+    set_cli_override(args, lora_cfg, "lora_alpha", "alpha")
+    set_cli_override(args, lora_cfg, "lora_dropout", "dropout")
+    set_cli_override(args, lora_cfg, "lora_bias", "bias")
+    if args.lora_target_modules is not None:
+        lora_cfg["target_modules"] = parse_modalities(args.lora_target_modules)
+
+
+def total_train_steps(epochs: int, batches_per_epoch: int, max_steps: int) -> int:
+    epoch_steps = max(0, epochs) * max(0, batches_per_epoch)
+    if max_steps > 0:
+        return min(max_steps, epoch_steps) if epoch_steps > 0 else max_steps
+    return epoch_steps
+
+
+def create_progress_bar(total: int) -> Any:
+    if not is_main_process() or tqdm is None or total <= 0:
+        return None
+    return tqdm(total=total, desc="train", dynamic_ncols=True, leave=True)
+
+
+def progress_postfix(train_log: dict[str, float]) -> dict[str, str]:
+    postfix = {
+        "loss": f"{train_log['train/loss']:.4g}",
+        "lr": f"{train_log['train/lr']:.2e}",
+    }
+    for key in ("train/volume_mean", "train/logits_mean", "train/cosine_logits_mean"):
+        if key in train_log:
+            postfix[key.removeprefix("train/")] = f"{train_log[key]:.4g}"
+    return postfix
 
 
 def build_model(cfg: dict[str, Any], device: torch.device) -> tuple[QwenOmniRetrievalModel, Any]:
@@ -432,26 +526,10 @@ def save_checkpoint(model: Any, cfg: dict[str, Any], *, step: int, metrics: dict
 def main() -> None:
     args = parse_args()
     cfg = load_config(args.config)
-    if args.modality is not None and args.extra_modalities is not None:
-        raise ValueError("Use either `--modality` or legacy `--extra_modalities`, not both.")
-    if args.modality is not None:
-        cfg["training"]["modalities"] = parse_modalities(args.modality)
-        cfg["training"].pop("extra_modalities", None)
-    elif args.extra_modalities is not None:
-        cfg["training"]["extra_modalities"] = parse_modalities(args.extra_modalities)
-    if args.output_dir:
-        cfg["training"]["output_dir"] = args.output_dir
-    if args.eval_steps is not None:
-        cfg["training"]["eval_steps"] = args.eval_steps
-    if args.do_eval is not None:
-        cfg["training"]["do_eval"] = args.do_eval == "true"
-    if args.loss_mode is not None:
-        cfg.setdefault("loss", {})["mode"] = args.loss_mode
-        cfg["loss"]["score_mode"] = args.loss_mode
-    if args.wandb_mode is not None:
-        cfg.setdefault("wandb", {})["mode"] = args.wandb_mode
+    apply_cli_overrides(cfg, args)
 
     device, rank, world_size, _ = setup_distributed()
+    progress_bar = None
     try:
         set_seed(int(cfg["training"].get("seed", 42)) + rank)
         dataset_name = cfg["training"].get("dataset_name", "vast")
@@ -507,6 +585,8 @@ def main() -> None:
         grad_clip = float(training_cfg.get("max_grad_norm", 1.0))
         max_steps = int(training_cfg.get("max_steps", 0))
         global_step = 0
+        log_steps = int(training_cfg.get("log_steps", 10))
+        progress_bar = create_progress_bar(total_train_steps(epochs, len(train_loader), max_steps))
 
         for epoch in range(epochs):
             if train_sampler is not None:
@@ -550,7 +630,10 @@ def main() -> None:
                     train_log.update({f"train/{k}": float(v.cpu()) for k, v in stats.items()})
                     if wandb_run is not None:
                         wandb_run.log(train_log, step=global_step)
-                    if global_step % int(training_cfg.get("log_steps", 10)) == 0:
+                    if progress_bar is not None:
+                        progress_bar.set_postfix(progress_postfix(train_log))
+                        progress_bar.update(1)
+                    elif log_steps > 0 and global_step % log_steps == 0:
                         print({"step": global_step, **train_log})
 
                 do_eval = do_eval_enabled and eval_steps > 0 and global_step % eval_steps == 0
@@ -577,6 +660,10 @@ def main() -> None:
             if max_steps > 0 and global_step >= max_steps:
                 break
 
+        if progress_bar is not None:
+            progress_bar.close()
+            progress_bar = None
+
         final_metrics = (
             evaluate_all(
                 model,
@@ -594,6 +681,8 @@ def main() -> None:
         if wandb_run is not None:
             wandb_run.finish()
     finally:
+        if progress_bar is not None:
+            progress_bar.close()
         cleanup_distributed()
 
 
