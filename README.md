@@ -40,13 +40,17 @@ bash scripts_sh/preprocess_vast.sh --nframes 8 --feature_dtype bf16
 ```bash
 CUDA_VISIBLE_DEVICES=0,1,2,3 \
 NPROC_PER_NODE=4 \
-bash scripts_sh/train_vast.sh --extra audio,subtitle,vast_cap
+bash scripts_sh/train_vast.sh --modality video audio vision_cap
 ```
+
+Training modalities must contain `video` and exactly one text anchor, either `vision_cap` or
+`vast_cap`. Two modalities use cosine contrastive loss; three or four modalities use Gram-volume
+loss with the configured volume score mode.
 
 Disable periodic and final training-time evaluation when you only want to train/save:
 
 ```bash
-bash scripts_sh/train_vast.sh --extra audio --do_eval false
+bash scripts_sh/train_vast.sh --modality video vision_cap --do_eval false
 ```
 
 During training-time evaluation, each eval dataset first tries `cache_dir/manifest.jsonl`.

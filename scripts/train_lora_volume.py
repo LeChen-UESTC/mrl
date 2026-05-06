@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from qwen_omni_retrieval.data.cache_dataset import CachedRetrievalDataset
 from qwen_omni_retrieval.data.collator import QwenOmniCachedCollator
 from qwen_omni_retrieval.data.modality import (
+    normalize_train_modalities,
     parse_modalities,
     required_eval_modalities,
     required_train_modalities,
@@ -55,6 +56,7 @@ ALL_HEAD_MODALITIES = ["vision_cap", "video", "audio", "subtitle", "vast_cap"]
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="DDP LoRA training with Gram-volume retrieval loss.")
     parser.add_argument("--config", required=True)
+    parser.add_argument("--modality", nargs="+", default=None)
     parser.add_argument("--extra_modalities", default=None)
     parser.add_argument("--output_dir", default=None)
     parser.add_argument("--eval_steps", type=int, default=None)
@@ -102,6 +104,47 @@ def eval_video_nframes(eval_cfg: dict[str, Any]) -> int | None:
     if "nframes" in eval_cfg:
         return optional_positive_int(eval_cfg.get("nframes"), name="eval nframes")
     return optional_positive_int(eval_cfg.get("video", {}).get("nframes"), name="eval video.nframes")
+
+
+def resolve_training_modalities(training_cfg: dict[str, Any], *, dataset_name: str) -> list[str]:
+    allow_vast_cap = dataset_name.lower() == "vast"
+    if training_cfg.get("modalities") is not None:
+        return normalize_train_modalities(
+            parse_modalities(training_cfg.get("modalities")),
+            dataset_name=dataset_name,
+            allow_vast_cap=allow_vast_cap,
+        )
+
+    extra_modalities = parse_modalities(training_cfg.get("extra_modalities", []))
+    validate_train_extra_modalities(
+        extra_modalities,
+        dataset_name=dataset_name,
+        allow_vast_cap=allow_vast_cap,
+    )
+    if "vast_cap" in extra_modalities:
+        raise ValueError(
+            "Legacy `extra_modalities` cannot include `vast_cap` because `vision_cap` "
+            "is the implicit text anchor. Use `modalities: [vast_cap, video, ...]` instead."
+        )
+    return normalize_train_modalities(
+        required_train_modalities(extra_modalities),
+        dataset_name=dataset_name,
+        allow_vast_cap=allow_vast_cap,
+    )
+
+
+def training_text_anchor(modalities: list[str]) -> str:
+    text_modalities = [modality for modality in modalities if modality in {"vision_cap", "vast_cap"}]
+    if len(text_modalities) != 1:
+        raise ValueError(f"Expected exactly one training text anchor, got {text_modalities}.")
+    return text_modalities[0]
+
+
+def training_loss_mode(modalities: list[str], loss_cfg: dict[str, Any]) -> str:
+    if len(modalities) == 2:
+        return "cosine"
+    configured = resolve_loss_mode(loss_cfg)
+    return configured if configured != "cosine" else "inverse_volume"
 
 
 def build_model(cfg: dict[str, Any], device: torch.device) -> tuple[QwenOmniRetrievalModel, Any]:
@@ -389,7 +432,12 @@ def save_checkpoint(model: Any, cfg: dict[str, Any], *, step: int, metrics: dict
 def main() -> None:
     args = parse_args()
     cfg = load_config(args.config)
-    if args.extra_modalities is not None:
+    if args.modality is not None and args.extra_modalities is not None:
+        raise ValueError("Use either `--modality` or legacy `--extra_modalities`, not both.")
+    if args.modality is not None:
+        cfg["training"]["modalities"] = parse_modalities(args.modality)
+        cfg["training"].pop("extra_modalities", None)
+    elif args.extra_modalities is not None:
         cfg["training"]["extra_modalities"] = parse_modalities(args.extra_modalities)
     if args.output_dir:
         cfg["training"]["output_dir"] = args.output_dir
@@ -407,19 +455,18 @@ def main() -> None:
     try:
         set_seed(int(cfg["training"].get("seed", 42)) + rank)
         dataset_name = cfg["training"].get("dataset_name", "vast")
-        extra_modalities = parse_modalities(cfg["training"].get("extra_modalities", []))
-        loss_mode = resolve_loss_mode(cfg.get("loss", {}))
-        validate_train_extra_modalities(
-            extra_modalities,
-            dataset_name=dataset_name,
-            allow_vast_cap=dataset_name.lower() == "vast",
-        )
-        active_extra_modalities = [] if loss_mode == "cosine" else extra_modalities
-        train_modalities = required_train_modalities(active_extra_modalities)
+        train_modalities = resolve_training_modalities(cfg["training"], dataset_name=dataset_name)
+        text_anchor = training_text_anchor(train_modalities)
 
         model, processor = build_model(cfg, device)
         if is_main_process():
-            print({"trainable_parameters": trainable_parameter_summary(model)})
+            print(
+                {
+                    "trainable_parameters": trainable_parameter_summary(model),
+                    "train_modalities": train_modalities,
+                    "train_loss_mode": training_loss_mode(train_modalities, cfg.get("loss", {})),
+                }
+            )
         if is_distributed():
             model = DistributedDataParallel(
                 model,
@@ -472,11 +519,12 @@ def main() -> None:
                 }
                 embeddings = model(modality_inputs)
 
-                candidates = [embeddings["video"], *[embeddings[mod] for mod in active_extra_modalities]]
+                train_loss_mode = training_loss_mode(train_modalities, loss_cfg)
+                candidates = [embeddings[modality] for modality in train_modalities if modality != text_anchor]
                 loss, stats = symmetric_contrastive_loss(
-                    embeddings["vision_cap"],
+                    embeddings[text_anchor],
                     candidates,
-                    mode=resolve_loss_mode(loss_cfg),
+                    mode=train_loss_mode,
                     scale=float(loss_cfg.get("volume_scale", 10.0)),
                     temperature=float(loss_cfg.get("temperature", 1.0)),
                     eps=float(loss_cfg.get("volume_eps", 1.0e-6)),

@@ -5,7 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source /root/my_conda/etc/profile.d/conda.sh
 conda activate /root/my_conda/envs/cl
 
-EXTRA="audio"
+EXTRA=""
+MODALITIES=()
 NPROC_PER_NODE="${NPROC_PER_NODE:-8}"
 CONFIG="${ROOT_DIR}/configs/train/vast_lora_volume.yaml"
 OUTPUT_DIR=""
@@ -16,6 +17,17 @@ DO_EVAL=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --modality|--modalities)
+      shift
+      while [[ $# -gt 0 && "$1" != --* ]]; do
+        MODALITIES+=("$1")
+        shift
+      done
+      if [[ "${#MODALITIES[@]}" -eq 0 ]]; then
+        echo "--modality requires at least one modality value" >&2
+        exit 2
+      fi
+      ;;
     --extra|--extra_modalities)
       EXTRA="$2"
       shift 2
@@ -55,7 +67,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-ARGS=(--config "${CONFIG}" --extra_modalities "${EXTRA}")
+ARGS=(--config "${CONFIG}")
+if [[ "${#MODALITIES[@]}" -gt 0 ]]; then
+  ARGS+=(--modality "${MODALITIES[@]}")
+fi
+if [[ -n "${EXTRA}" ]]; then
+  ARGS+=(--extra_modalities "${EXTRA}")
+fi
 if [[ -n "${OUTPUT_DIR}" ]]; then
   ARGS+=(--output_dir "${OUTPUT_DIR}")
 fi

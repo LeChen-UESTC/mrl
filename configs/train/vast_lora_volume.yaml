@@ -33,7 +33,9 @@ training:
   dataset_name: vast
   cache_dir: /mnt/d/cl/mrl/data_cache/vast_train
   output_dir: /mnt/d/cl/mrl/outputs/vast_lora_volume
-  extra_modalities:
+  modalities:
+    - vision_cap
+    - video
     - audio
   use_audio_in_video: true
   caption_selection: random
