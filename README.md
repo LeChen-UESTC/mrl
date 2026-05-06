@@ -43,7 +43,20 @@ NPROC_PER_NODE=4 \
 bash scripts_sh/train_vast.sh --extra audio,subtitle,vast_cap
 ```
 
+Disable periodic and final training-time evaluation when you only want to train/save:
+
+```bash
+bash scripts_sh/train_vast.sh --extra audio --do_eval false
+```
+
+During training-time evaluation, each eval dataset first tries `cache_dir/manifest.jsonl`.
+If that cache is missing or lacks the requested modalities, the script falls back to the raw
+`anno_path` and video/audio directories configured under `eval_datasets` and processes media
+on the fly without writing a cache.
+
 ## Evaluate
+
+Standalone eval uses the same cache-first, raw-media fallback behavior.
 
 ```bash
 bash scripts_sh/eval_msrvtt.sh \

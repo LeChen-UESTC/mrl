@@ -20,6 +20,11 @@ from qwen_omni_retrieval.data.modality import (
     required_eval_modalities,
     validate_modalities,
 )
+from qwen_omni_retrieval.data.raw_dataset import (
+    RawRetrievalCollator,
+    RawRetrievalDataset,
+    raw_batch_to_model_inputs,
+)
 from qwen_omni_retrieval.data.sampler import DistributedEvalSampler
 from qwen_omni_retrieval.evaluation.retrieval import evaluate_retrieval_from_embeddings
 from qwen_omni_retrieval.losses.contrastive import resolve_loss_mode
@@ -56,6 +61,21 @@ def pad_token_id(processor: Any) -> int:
     tokenizer = getattr(processor, "tokenizer", None)
     value = getattr(tokenizer, "pad_token_id", None) if tokenizer is not None else None
     return 0 if value is None else int(value)
+
+
+def optional_positive_int(value: Any, *, name: str) -> int | None:
+    if value is None or value == "":
+        return None
+    number = int(value)
+    if number <= 0:
+        raise ValueError(f"{name} must be positive when set, got {number}.")
+    return number
+
+
+def eval_video_nframes(eval_cfg: dict[str, Any]) -> int | None:
+    if "nframes" in eval_cfg:
+        return optional_positive_int(eval_cfg.get("nframes"), name="eval nframes")
+    return optional_positive_int(eval_cfg.get("video", {}).get("nframes"), name="eval video.nframes")
 
 
 def load_eval_model(cfg: dict[str, Any], device: torch.device) -> tuple[QwenOmniRetrievalModel, Any]:
@@ -110,11 +130,40 @@ def run_eval(cfg: dict[str, Any], model: Any, processor: Any, device: torch.devi
     required = required_eval_modalities(query_modality, target_modality, auxiliary_modalities)
     validate_modalities(required, dataset_name=dataset_name, allow_vast_cap=dataset_name.lower() == "vast")
 
-    dataset = CachedRetrievalDataset(
-        eval_cfg["cache_dir"],
-        required_modalities=required,
-        caption_selection=eval_cfg.get("caption_selection", "random"),
-    )
+    dataset_source = "cache"
+    raw_mode = False
+    try:
+        dataset = CachedRetrievalDataset(
+            eval_cfg["cache_dir"],
+            required_modalities=required,
+            caption_selection=eval_cfg.get("caption_selection", "random"),
+        )
+        collate_fn = QwenOmniCachedCollator(modalities=required, pad_token_id=pad_token_id(processor))
+    except (FileNotFoundError, ValueError) as exc:
+        if not eval_cfg.get("anno_path") or not eval_cfg.get("video_dir"):
+            raise
+        dataset_source = "raw"
+        raw_mode = True
+        if is_main_process():
+            print(
+                {
+                    "eval_fallback": dataset_name,
+                    "source": "raw",
+                    "reason": str(exc),
+                },
+                flush=True,
+            )
+        dataset = RawRetrievalDataset(
+            anno_path=eval_cfg["anno_path"],
+            video_dir=eval_cfg["video_dir"],
+            audio_dir=eval_cfg.get("audio_dir"),
+            required_modalities=required,
+            use_audio_in_video=bool(eval_cfg.get("use_audio_in_video", False)),
+            audio_from_video_if_missing=bool(eval_cfg.get("audio_from_video_if_missing", True)),
+            caption_selection=eval_cfg.get("caption_selection", "random"),
+        )
+        collate_fn = RawRetrievalCollator()
+
     sampler = DistributedEvalSampler(len(dataset)) if is_distributed() else None
     loader = DataLoader(
         dataset,
@@ -123,34 +172,67 @@ def run_eval(cfg: dict[str, Any], model: Any, processor: Any, device: torch.devi
         sampler=sampler,
         num_workers=int(eval_cfg.get("num_workers", 2)),
         pin_memory=True,
-        collate_fn=QwenOmniCachedCollator(modalities=required, pad_token_id=pad_token_id(processor)),
+        collate_fn=collate_fn,
     )
 
+    core = model.module if hasattr(model, "module") else model
+    previous_video_use_audio = core.use_audio_in_video_by_modality.get("video", False)
+    core.use_audio_in_video_by_modality["video"] = bool(
+        eval_cfg.get("use_audio_in_video", previous_video_use_audio)
+    )
+    pad_id = pad_token_id(processor)
     local_records: list[dict[str, Any]] = []
-    for batch in loader:
-        modality_inputs = {
-            modality: move_to_device(batch["modalities"][modality], device)
-            for modality in required
-        }
-        embeddings = {
-            modality: tensor.detach().float().cpu()
-            for modality, tensor in model(modality_inputs).items()
-        }
-        for i, video_id in enumerate(batch["video_ids"]):
-            local_records.append(
-                {
-                    "index": int(batch["indices"][i]),
-                    "video_id": video_id,
-                    "query": embeddings[query_modality][i],
-                    "target": embeddings[target_modality][i],
-                    "aux": [embeddings[mod][i] for mod in auxiliary_modalities],
+    raw_skipped: list[dict[str, str]] = []
+    try:
+        for batch in loader:
+            if raw_mode:
+                raw_inputs, valid_positions, skipped = raw_batch_to_model_inputs(
+                    batch,
+                    required_modalities=required,
+                    processor=processor,
+                    pad_token_id=pad_id,
+                    video_nframes=eval_video_nframes(eval_cfg),
+                )
+                raw_skipped.extend(skipped)
+                if not valid_positions:
+                    continue
+                modality_inputs = {
+                    modality: move_to_device(inputs, device)
+                    for modality, inputs in raw_inputs.items()
                 }
-            )
+                record_positions = valid_positions
+            else:
+                modality_inputs = {
+                    modality: move_to_device(batch["modalities"][modality], device)
+                    for modality in required
+                }
+                record_positions = list(range(len(batch["video_ids"])))
+
+            embeddings = {
+                modality: tensor.detach().float().cpu()
+                for modality, tensor in model(modality_inputs).items()
+            }
+            for emb_idx, position in enumerate(record_positions):
+                video_id = batch["video_ids"][position]
+                local_records.append(
+                    {
+                        "index": int(batch["indices"][position]),
+                        "video_id": video_id,
+                        "query": embeddings[query_modality][emb_idx],
+                        "target": embeddings[target_modality][emb_idx],
+                        "aux": [embeddings[mod][emb_idx] for mod in auxiliary_modalities],
+                    }
+                )
+    finally:
+        core.use_audio_in_video_by_modality["video"] = previous_video_use_audio
 
     gathered = all_gather_object(local_records)
+    gathered_skipped = all_gather_object(raw_skipped)
     if not is_main_process():
         return {}
     records = [item for part in gathered for item in part]
+    if not records:
+        raise ValueError(f"No valid eval records were produced for {dataset_name}.")
     records.sort(key=lambda item: item["index"])
     query_embeddings = torch.stack([item["query"] for item in records], dim=0)
     target_embeddings = torch.stack([item["target"] for item in records], dim=0)
@@ -160,7 +242,7 @@ def run_eval(cfg: dict[str, Any], model: Any, processor: Any, device: torch.devi
     ]
     ids = [item["video_id"] for item in records]
     loss_cfg = cfg.get("loss", {})
-    return evaluate_retrieval_from_embeddings(
+    metrics = evaluate_retrieval_from_embeddings(
         query_embeddings=query_embeddings,
         target_embeddings=target_embeddings,
         auxiliary_embeddings=aux_embeddings,
@@ -172,6 +254,9 @@ def run_eval(cfg: dict[str, Any], model: Any, processor: Any, device: torch.devi
         temperature=float(loss_cfg.get("temperature", 1.0)),
         eps=float(loss_cfg.get("volume_eps", 1.0e-6)),
     )
+    if dataset_source == "raw":
+        metrics["raw_skipped"] = float(sum(len(items) for items in gathered_skipped))
+    return metrics
 
 
 def main() -> None:

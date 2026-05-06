@@ -20,12 +20,17 @@ loss:
 eval:
   name: msrvtt
   cache_dir: /mnt/d/cl/mrl/data_cache/msrvtt_test
+  anno_path: /mnt/d/data/msrvtt/test_silence_flitered_884.json
+  video_dir: /mnt/d/data/msrvtt/data/all-video
+  audio_dir: /mnt/d/data/msrvtt/data/all-audio
   checkpoint_dir: /mnt/d/cl/mrl/outputs/vast_lora_volume/step_0000000
   query_modality: vision_cap
   target_modality: video
   auxiliary_modalities:
     - audio
   use_audio_in_video: false
+  audio_from_video_if_missing: false
+  nframes:
   caption_selection: random
   batch_size: 1
   num_workers: 2

@@ -20,12 +20,17 @@ loss:
 eval:
   name: didemo
   cache_dir: /mnt/d/cl/mrl/data_cache/didemo_test
+  anno_path: /mnt/d/data/didemo/test_silence_flitered_998.json
+  video_dir: /mnt/d/data/didemo/video
+  audio_dir:
   checkpoint_dir: /mnt/d/cl/mrl/outputs/vast_lora_volume/step_0000000
   query_modality: vision_cap
   target_modality: video
   auxiliary_modalities:
     - audio
   use_audio_in_video: true
+  audio_from_video_if_missing: true
+  nframes:
   caption_selection: random
   batch_size: 1
   num_workers: 2

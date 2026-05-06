@@ -12,6 +12,7 @@ OUTPUT_DIR=""
 EVAL_STEPS=""
 LOSS_MODE=""
 WANDB_MODE=""
+DO_EVAL=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -35,6 +36,10 @@ while [[ $# -gt 0 ]]; do
       EVAL_STEPS="$2"
       shift 2
       ;;
+    --do_eval)
+      DO_EVAL="$2"
+      shift 2
+      ;;
     --loss_mode)
       LOSS_MODE="$2"
       shift 2
@@ -56,6 +61,9 @@ if [[ -n "${OUTPUT_DIR}" ]]; then
 fi
 if [[ -n "${EVAL_STEPS}" ]]; then
   ARGS+=(--eval_steps "${EVAL_STEPS}")
+fi
+if [[ -n "${DO_EVAL}" ]]; then
+  ARGS+=(--do_eval "${DO_EVAL}")
 fi
 if [[ -n "${LOSS_MODE}" ]]; then
   ARGS+=(--loss_mode "${LOSS_MODE}")
