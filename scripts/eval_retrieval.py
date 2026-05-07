@@ -10,6 +10,11 @@ import torch
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader
 
+try:
+    from tqdm.auto import tqdm
+except ImportError:
+    tqdm = None
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
@@ -53,6 +58,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target")
     parser.add_argument("--aux", default=None)
     parser.add_argument("--loss_mode", choices=["inverse_volume", "neg_log", "cosine"], default=None)
+    parser.add_argument("--batch_size", type=int, default=None)
+    parser.add_argument("--num_workers", type=int, default=None)
+    parser.add_argument("--nframes", type=int, default=None)
     parser.add_argument("--output_json")
     return parser.parse_args()
 
@@ -104,6 +112,17 @@ def output_json_with_checkpoint_suffix(output_json: str | Path | None, checkpoin
     if output_path.stem.endswith(stem_suffix):
         return str(output_path)
     return str(output_path.with_name(f"{output_path.stem}{stem_suffix}{output_path.suffix}"))
+
+
+def progress_iter(loader: DataLoader, *, dataset_name: str, dataset_source: str) -> Any:
+    if not is_main_process() or tqdm is None:
+        return loader
+    return tqdm(
+        loader,
+        total=len(loader),
+        desc=f"eval {dataset_name} [{dataset_source}]",
+        dynamic_ncols=True,
+    )
 
 
 def load_eval_model(cfg: dict[str, Any], device: torch.device) -> tuple[QwenOmniRetrievalModel, Any]:
@@ -167,6 +186,17 @@ def run_eval(cfg: dict[str, Any], model: Any, processor: Any, device: torch.devi
             caption_selection=eval_cfg.get("caption_selection", "random"),
         )
         collate_fn = QwenOmniCachedCollator(modalities=required, pad_token_id=pad_token_id(processor))
+        if is_main_process():
+            print(
+                {
+                    "eval_dataset": dataset_name,
+                    "source": "cache",
+                    "cache_dir": eval_cfg["cache_dir"],
+                    "records": len(dataset),
+                    "required_modalities": required,
+                },
+                flush=True,
+            )
     except (FileNotFoundError, ValueError) as exc:
         if not eval_cfg.get("anno_path") or not eval_cfg.get("video_dir"):
             raise
@@ -191,6 +221,16 @@ def run_eval(cfg: dict[str, Any], model: Any, processor: Any, device: torch.devi
             caption_selection=eval_cfg.get("caption_selection", "random"),
         )
         collate_fn = RawRetrievalCollator()
+        if is_main_process():
+            print(
+                {
+                    "eval_dataset": dataset_name,
+                    "source": "raw",
+                    "records": len(dataset),
+                    "required_modalities": required,
+                },
+                flush=True,
+            )
 
     sampler = DistributedEvalSampler(len(dataset)) if is_distributed() else None
     loader = DataLoader(
@@ -212,7 +252,7 @@ def run_eval(cfg: dict[str, Any], model: Any, processor: Any, device: torch.devi
     local_records: list[dict[str, Any]] = []
     raw_skipped: list[dict[str, str]] = []
     try:
-        for batch in loader:
+        for batch in progress_iter(loader, dataset_name=dataset_name, dataset_source=dataset_source):
             if raw_mode:
                 raw_inputs, valid_positions, skipped = raw_batch_to_model_inputs(
                     batch,
@@ -301,6 +341,12 @@ def main() -> None:
     if args.loss_mode is not None:
         cfg.setdefault("loss", {})["mode"] = args.loss_mode
         cfg["loss"]["score_mode"] = args.loss_mode
+    if args.batch_size is not None:
+        cfg["eval"]["batch_size"] = args.batch_size
+    if args.num_workers is not None:
+        cfg["eval"]["num_workers"] = args.num_workers
+    if args.nframes is not None:
+        cfg["eval"]["nframes"] = args.nframes
     if args.output_json:
         cfg["eval"]["output_json"] = args.output_json
     else:
@@ -311,7 +357,18 @@ def main() -> None:
 
     device, _, _, _ = setup_distributed()
     try:
+        if is_main_process():
+            print(
+                {
+                    "eval_stage": "load_model",
+                    "checkpoint_dir": cfg["eval"].get("checkpoint_dir"),
+                    "device": str(device),
+                },
+                flush=True,
+            )
         model, processor = load_eval_model(cfg, device)
+        if is_main_process():
+            print({"eval_stage": "model_loaded"}, flush=True)
         if is_distributed():
             model = DistributedDataParallel(
                 model,
@@ -319,6 +376,8 @@ def main() -> None:
                 output_device=device.index,
                 find_unused_parameters=True,
             )
+            if is_main_process():
+                print({"eval_stage": "ddp_wrapped"}, flush=True)
         metrics = run_eval(cfg, model, processor, device)
         if is_main_process():
             print(metrics)
