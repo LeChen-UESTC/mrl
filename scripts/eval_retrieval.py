@@ -178,6 +178,13 @@ def load_eval_model(cfg: dict[str, Any], device: torch.device) -> tuple[QwenOmni
             projection.load_state_dict(torch.load(projection_path, map_location="cpu"))
             eval_log("load_projection_done", projection_path=str(projection_path))
 
+    eval_log("move_thinker_to_device_start", device=str(device))
+    thinker = thinker.to(device)
+    eval_log("move_thinker_to_device_done", device=str(device))
+    eval_log("move_projection_to_device_start", device=str(device))
+    projection = projection.to(device)
+    eval_log("move_projection_to_device_done", device=str(device))
+
     eval_log("build_retrieval_model_start")
     model = QwenOmniRetrievalModel(
         thinker=thinker,
@@ -188,9 +195,6 @@ def load_eval_model(cfg: dict[str, Any], device: torch.device) -> tuple[QwenOmni
         },
     )
     eval_log("build_retrieval_model_done")
-    eval_log("move_model_to_device_start", device=str(device))
-    model.to(device)
-    eval_log("move_model_to_device_done", device=str(device))
     model.eval()
     eval_log("model_eval_mode_done")
     return model, processor
