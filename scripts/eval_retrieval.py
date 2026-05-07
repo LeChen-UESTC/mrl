@@ -40,6 +40,7 @@ from qwen_omni_retrieval.utils.config import load_config, save_json
 from qwen_omni_retrieval.utils.distributed import (
     all_gather_object,
     cleanup_distributed,
+    get_rank,
     is_distributed,
     is_main_process,
     setup_distributed,
@@ -125,20 +126,42 @@ def progress_iter(loader: DataLoader, *, dataset_name: str, dataset_source: str)
     )
 
 
+def eval_log(stage: str, **payload: Any) -> None:
+    print({"rank": get_rank(), "eval_stage": stage, **payload}, flush=True)
+
+
 def load_eval_model(cfg: dict[str, Any], device: torch.device) -> tuple[QwenOmniRetrievalModel, Any]:
-    thinker, processor = load_qwen_thinker_and_processor(cfg["model"])
     checkpoint_dir = cfg["eval"].get("checkpoint_dir")
+    eval_log(
+        "load_base_start",
+        device=str(device),
+        model_path=cfg["model"].get("model_path"),
+        processor_path=cfg["model"].get("processor_path"),
+        checkpoint_dir=checkpoint_dir,
+    )
+    thinker, processor = load_qwen_thinker_and_processor(cfg["model"])
+    eval_log("load_base_done", device=str(device))
     if checkpoint_dir:
         adapter_dir = Path(checkpoint_dir) / "adapter"
+        eval_log("load_adapter_check", adapter_dir=str(adapter_dir), exists=adapter_dir.exists())
         if adapter_dir.exists():
+            eval_log("load_adapter_start", adapter_dir=str(adapter_dir))
             try:
                 from peft import PeftModel
             except ImportError as exc:
                 raise ImportError("Loading a LoRA adapter requires `peft` in the existing environment.") from exc
             thinker = PeftModel.from_pretrained(thinker, adapter_dir, is_trainable=False)
+            eval_log("load_adapter_done", adapter_dir=str(adapter_dir))
 
+    eval_log("infer_hidden_size_start")
     hidden_size = infer_hidden_size(thinker)
+    eval_log("infer_hidden_size_done", hidden_size=hidden_size)
     projection_cfg = cfg.get("projection", {})
+    eval_log(
+        "build_projection_start",
+        mode=projection_cfg.get("mode", "shared"),
+        embed_dim=projection_cfg.get("embed_dim"),
+    )
     projection = ProjectionHead(
         mode=projection_cfg.get("mode", "shared"),
         hidden_size=hidden_size,
@@ -146,11 +169,16 @@ def load_eval_model(cfg: dict[str, Any], device: torch.device) -> tuple[QwenOmni
         modalities=ALL_HEAD_MODALITIES,
         normalize=projection_cfg.get("normalize", True),
     )
+    eval_log("build_projection_done")
     if checkpoint_dir:
         projection_path = Path(checkpoint_dir) / "projection_head.pt"
+        eval_log("load_projection_check", projection_path=str(projection_path), exists=projection_path.exists())
         if projection_path.exists():
+            eval_log("load_projection_start", projection_path=str(projection_path))
             projection.load_state_dict(torch.load(projection_path, map_location="cpu"))
+            eval_log("load_projection_done", projection_path=str(projection_path))
 
+    eval_log("build_retrieval_model_start")
     model = QwenOmniRetrievalModel(
         thinker=thinker,
         projection=projection,
@@ -159,8 +187,12 @@ def load_eval_model(cfg: dict[str, Any], device: torch.device) -> tuple[QwenOmni
             "audio": False,
         },
     )
+    eval_log("build_retrieval_model_done")
+    eval_log("move_model_to_device_start", device=str(device))
     model.to(device)
+    eval_log("move_model_to_device_done", device=str(device))
     model.eval()
+    eval_log("model_eval_mode_done")
     return model, processor
 
 
