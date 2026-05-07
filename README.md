@@ -48,12 +48,16 @@ on the fly without writing a cache.
 Standalone eval uses the same cache-first, raw-media fallback behavior.
 
 ```bash
+CUDA_VISIBLE_DEVICES=1 \
 bash scripts_sh/eval_msrvtt.sh \
-  --checkpoint_dir /mnt/d/cl/mrl/outputs/vast_lora_volume/step_0000500 \
+  --checkpoint_dir /mnt/d/cl/mrl/outputs/vast_lora_volume/step_0001000 \
   --query vision_cap \
   --target video \
   --aux audio
 ```
+
+Unless `--output_json` is passed explicitly, the result filename appends the last two
+checkpoint path parts, for example `eval_msrvtt_vast_lora_volume_step_0001000.json`.
 
 ## Visualize
 

@@ -78,6 +78,34 @@ def eval_video_nframes(eval_cfg: dict[str, Any]) -> int | None:
     return optional_positive_int(eval_cfg.get("video", {}).get("nframes"), name="eval video.nframes")
 
 
+def sanitize_output_segment(value: str) -> str:
+    return "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in value)
+
+
+def checkpoint_output_suffix(checkpoint_dir: str | Path | None) -> str | None:
+    if not checkpoint_dir:
+        return None
+    checkpoint_path = Path(str(checkpoint_dir).rstrip("/"))
+    parts = [part for part in checkpoint_path.parts if part not in {checkpoint_path.anchor, "", "/"}]
+    tail = parts[-2:] if len(parts) >= 2 else parts[-1:]
+    suffix = "_".join(sanitize_output_segment(part) for part in tail if part)
+    return suffix or None
+
+
+def output_json_with_checkpoint_suffix(output_json: str | Path | None, checkpoint_dir: str | Path | None) -> str | None:
+    if not output_json:
+        return None
+    suffix = checkpoint_output_suffix(checkpoint_dir)
+    if not suffix:
+        return str(output_json)
+
+    output_path = Path(output_json)
+    stem_suffix = f"_{suffix}"
+    if output_path.stem.endswith(stem_suffix):
+        return str(output_path)
+    return str(output_path.with_name(f"{output_path.stem}{stem_suffix}{output_path.suffix}"))
+
+
 def load_eval_model(cfg: dict[str, Any], device: torch.device) -> tuple[QwenOmniRetrievalModel, Any]:
     thinker, processor = load_qwen_thinker_and_processor(cfg["model"])
     checkpoint_dir = cfg["eval"].get("checkpoint_dir")
@@ -275,6 +303,11 @@ def main() -> None:
         cfg["loss"]["score_mode"] = args.loss_mode
     if args.output_json:
         cfg["eval"]["output_json"] = args.output_json
+    else:
+        cfg["eval"]["output_json"] = output_json_with_checkpoint_suffix(
+            cfg["eval"].get("output_json"),
+            cfg["eval"].get("checkpoint_dir"),
+        )
 
     device, _, _, _ = setup_distributed()
     try:
