@@ -22,50 +22,35 @@ NPROC_PER_NODE=4 \
 bash scripts_sh/train_vast.sh \
   --modality video audio vision_cap \
   --epochs 3 \
-  --max_steps 10000 \
-  --learning_rate 5e-5 \
-  --batch_size 1 \
-  --lora_r 16 \
-  --lora_alpha 32 \
+  --learning_rate 2e-4 \
+  --batch_size 16 \
+  --eval_batch_size 4 \
+  --lora_r 32 \
+  --lora_alpha 64 \
   --lora_dropout 0.05 \
   --do_eval false \
-  --wandb_mode offline
+  --eval_steps 500 \
+  --save_steps 500 \
+  --wandb_mode offline 
 ```
-
-`--epochs` controls full dataset passes. `--max_steps` caps total optimizer steps; set it to
-`0` or omit it for no step cap. Common runtime overrides also include `--eval_steps`,
-`--save_steps`, `--log_steps`, `--weight_decay`, `--max_grad_norm`, `--eval_batch_size`,
-`--num_workers`, `--lora_target_modules`, and `--lora_bias`. Rank 0 shows a tqdm training
-progress bar when `tqdm` is available; otherwise it falls back to `--log_steps` prints.
-
-During training-time evaluation, each eval dataset first tries `cache_dir/manifest.jsonl`.
-If that cache is missing or lacks the requested modalities, the script falls back to the raw
-`anno_path` and video/audio directories configured under `eval_datasets` and processes media
-on the fly without writing a cache.
 
 ## Evaluate
 
 Standalone eval uses the same cache-first, raw-media fallback behavior.
 
 ```bash
-CUDA_VISIBLE_DEVICES=0,1,2,3 \
-NPROC_PER_NODE=4 \
+PYTHONUNBUFFERED=1 \
+CUDA_VISIBLE_DEVICES=6,7 \
+NPROC_PER_NODE=2 \
 bash scripts_sh/eval_msrvtt.sh \
   --checkpoint_dir /mnt/d/cl/mrl/outputs/vast_lora_volume/step_0001000 \
   --query vision_cap \
   --target video \
   --aux audio \
   --batch_size 4 \
-  --num_workers 8
+  --num_workers 8 \
+  2>&1 | tee /mnt/d/cl/mrl/outputs/eval_msrvtt_step_0001000.log
 ```
-
-All `scripts_sh/eval_*.sh` scripts use `torchrun`; set `NPROC_PER_NODE` to the number of
-visible GPUs. Rank 0 prints model-loading status, cache/raw source, and a tqdm progress bar.
-Use `scripts_sh/eval_didemo.sh` or `scripts_sh/eval_vatex.sh` with the same arguments for
-the other downstream datasets.
-
-Unless `--output_json` is passed explicitly, the result filename appends the last two
-checkpoint path parts, for example `eval_msrvtt_vast_lora_volume_step_0001000.json`.
 
 ## Visualize
 
