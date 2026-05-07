@@ -13,7 +13,7 @@ from typing import Any
 
 RUN_DIR = Path("/mnt/d/cl/mrl/wandb/offline-run-20260506_055038-8b0mj82x")
 METRICS = ["train/loss", "train/lr", "train/volume_mean"]
-OUT_DIR = Path("/mnt/d/cl/mrl/visualizations")
+OUT_DIR = Path("/mnt/d/cl/mrl/visualization/output")
 
 
 def parse_args() -> argparse.Namespace:
