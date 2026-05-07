@@ -54,3 +54,16 @@ bash scripts_sh/eval_msrvtt.sh \
   --target video \
   --aux audio
 ```
+
+## Visualize
+
+Plot the default offline W&B run metrics configured in the script: `train/loss`, `train/lr`,
+and `train/volume_mean`.
+
+```bash
+python visualization/plot_wandb_curve.py
+```
+
+By default it reads `/mnt/d/cl/mrl/wandb/offline-run-20260506_055038-8b0mj82x` and writes
+`wandb_metrics.svg` plus `wandb_metrics.csv` under `/mnt/d/cl/mrl/visualizations`. If
+`matplotlib` already exists in the environment, it also writes `wandb_metrics.png`.
