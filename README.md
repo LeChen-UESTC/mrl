@@ -59,8 +59,10 @@ bash scripts_sh/eval_msrvtt.sh \
   --num_workers 8
 ```
 
-`eval_msrvtt.sh` uses `torchrun`; set `NPROC_PER_NODE` to the number of visible GPUs.
-Rank 0 prints model-loading status, cache/raw source, and a tqdm progress bar.
+All `scripts_sh/eval_*.sh` scripts use `torchrun`; set `NPROC_PER_NODE` to the number of
+visible GPUs. Rank 0 prints model-loading status, cache/raw source, and a tqdm progress bar.
+Use `scripts_sh/eval_didemo.sh` or `scripts_sh/eval_vatex.sh` with the same arguments for
+the other downstream datasets.
 
 Unless `--output_json` is passed explicitly, the result filename appends the last two
 checkpoint path parts, for example `eval_msrvtt_vast_lora_volume_step_0001000.json`.
