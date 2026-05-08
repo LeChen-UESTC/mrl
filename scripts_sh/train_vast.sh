@@ -13,6 +13,7 @@ EPOCHS=""
 MAX_STEPS=""
 BATCH_SIZE=""
 EVAL_BATCH_SIZE=""
+EVAL_NFRAMES=""
 NUM_WORKERS=""
 LEARNING_RATE=""
 WEIGHT_DECAY=""
@@ -68,6 +69,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --eval_batch_size)
       EVAL_BATCH_SIZE="$2"
+      shift 2
+      ;;
+    --eval_nframes)
+      EVAL_NFRAMES="$2"
       shift 2
       ;;
     --num_workers)
@@ -162,6 +167,9 @@ if [[ -n "${BATCH_SIZE}" ]]; then
 fi
 if [[ -n "${EVAL_BATCH_SIZE}" ]]; then
   ARGS+=(--eval_batch_size "${EVAL_BATCH_SIZE}")
+fi
+if [[ -n "${EVAL_NFRAMES}" ]]; then
+  ARGS+=(--eval_nframes "${EVAL_NFRAMES}")
 fi
 if [[ -n "${NUM_WORKERS}" ]]; then
   ARGS+=(--num_workers "${NUM_WORKERS}")

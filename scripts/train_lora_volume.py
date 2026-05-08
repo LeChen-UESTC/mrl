@@ -72,6 +72,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max_steps", type=int, default=None)
     parser.add_argument("--batch_size", type=int, default=None)
     parser.add_argument("--eval_batch_size", type=int, default=None)
+    parser.add_argument("--eval_nframes", type=int, default=None)
     parser.add_argument("--num_workers", type=int, default=None)
     parser.add_argument("--learning_rate", type=float, default=None)
     parser.add_argument("--weight_decay", type=float, default=None)
@@ -231,6 +232,9 @@ def apply_cli_overrides(cfg: dict[str, Any], args: argparse.Namespace) -> None:
         set_cli_override(args, training_cfg, arg_name)
     if args.do_eval is not None:
         training_cfg["do_eval"] = args.do_eval == "true"
+    if args.eval_nframes is not None:
+        for eval_cfg in cfg.get("eval_datasets", []):
+            eval_cfg["nframes"] = args.eval_nframes
 
     if args.loss_mode is not None:
         loss_cfg = cfg.setdefault("loss", {})

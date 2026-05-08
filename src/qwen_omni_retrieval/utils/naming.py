@@ -107,8 +107,18 @@ def checkpoint_model_and_step(checkpoint_dir: str | Path | None) -> tuple[str, s
     return sanitize_name(checkpoint_path.name), "step_unknown"
 
 
+def frame_sample_suffix(eval_cfg: dict[str, Any]) -> str:
+    nframes = eval_cfg.get("nframes")
+    if nframes is None and isinstance(eval_cfg.get("video"), dict):
+        nframes = eval_cfg["video"].get("nframes")
+    if nframes is None or nframes == "":
+        return "2fps"
+    return f"{sanitize_name(nframes)}frames"
+
+
 def default_eval_output_json(eval_cfg: dict[str, Any]) -> str:
     dataset_name = eval_cfg.get("name", "eval")
     output_root = Path(eval_cfg.get("output_root", DEFAULT_ZERO_SHOT_EVAL_ROOT))
     model_name, step_name = checkpoint_model_and_step(eval_cfg.get("checkpoint_dir"))
-    return str(output_root / dataset_dir_name(dataset_name) / f"{model_name}_{step_name}.json")
+    frame_suffix = frame_sample_suffix(eval_cfg)
+    return str(output_root / dataset_dir_name(dataset_name) / f"{model_name}_{step_name}_{frame_suffix}.json")

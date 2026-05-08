@@ -27,6 +27,7 @@ def make_args(**overrides: object) -> Namespace:
         "max_steps": None,
         "batch_size": None,
         "eval_batch_size": None,
+        "eval_nframes": None,
         "num_workers": None,
         "learning_rate": None,
         "weight_decay": None,
@@ -105,6 +106,7 @@ def test_train_modalities_reject_missing_video_or_multiple_text_anchors() -> Non
 def test_apply_cli_overrides_training_and_lora_args() -> None:
     cfg = {
         "training": {"modalities": ["vision_cap", "video"], "extra_modalities": ["audio"]},
+        "eval_datasets": [{"name": "msr_vtt", "nframes": ""}, {"name": "didemo"}],
         "loss": {"mode": "inverse_volume"},
         "wandb": {},
         "lora": {"r": 16, "alpha": 32, "dropout": 0.05},
@@ -117,6 +119,7 @@ def test_apply_cli_overrides_training_and_lora_args() -> None:
             max_steps=10000,
             batch_size=2,
             eval_batch_size=4,
+            eval_nframes=8,
             num_workers=6,
             learning_rate=5.0e-5,
             weight_decay=0.02,
@@ -141,6 +144,7 @@ def test_apply_cli_overrides_training_and_lora_args() -> None:
     assert cfg["training"]["max_steps"] == 10000
     assert cfg["training"]["batch_size"] == 2
     assert cfg["training"]["eval_batch_size"] == 4
+    assert [item["nframes"] for item in cfg["eval_datasets"]] == [8, 8]
     assert cfg["training"]["num_workers"] == 6
     assert cfg["training"]["learning_rate"] == 5.0e-5
     assert cfg["training"]["weight_decay"] == 0.02
