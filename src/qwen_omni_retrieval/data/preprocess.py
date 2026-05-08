@@ -10,6 +10,7 @@ from qwen_omni_retrieval.data.annotation import NormalizedRecord, load_annotatio
 from qwen_omni_retrieval.data.media_paths import resolve_media_paths
 from qwen_omni_retrieval.data.modality import TEXT_MODALITIES, validate_modalities
 from qwen_omni_retrieval.data.serialization import encode_jsonable
+from qwen_omni_retrieval.utils.naming import sampling_cache_dir, sampling_values
 
 
 SYSTEM_PROMPT = (
@@ -30,6 +31,11 @@ def normalize_nframes(value: Any) -> int | None:
     if nframes <= 0:
         raise ValueError(f"nframes must be a positive integer when set, got {nframes}.")
     return nframes
+
+
+def normalize_fps(value: Any) -> float | None:
+    _, fps = sampling_values({"fps": value})
+    return fps
 
 
 def normalize_optional_positive_int(value: Any, *, name: str) -> int | None:
@@ -87,13 +93,16 @@ def feature_dtype_name(dtype: torch.dtype) -> str:
 
 
 def output_dir_with_frame_suffix(output_dir: str | Path, nframes: int | None) -> Path:
-    output_path = Path(output_dir)
-    if nframes is None:
-        return output_path
-    suffix = f"_n_frames_{nframes}"
-    if output_path.name.endswith(suffix):
-        return output_path
-    return output_path.with_name(f"{output_path.name}{suffix}")
+    return sampling_cache_dir(output_dir, {"nframes": nframes})
+
+
+def output_dir_with_sampling_suffix(
+    output_dir: str | Path,
+    *,
+    nframes: int | None = None,
+    fps: float | None = None,
+) -> Path:
+    return sampling_cache_dir(output_dir, {"nframes": nframes, "fps": fps})
 
 
 def build_messages(
@@ -101,6 +110,7 @@ def build_messages(
     payload: str,
     *,
     video_nframes: int | None = None,
+    video_fps: float | None = None,
 ) -> list[dict[str, Any]]:
     if modality in TEXT_MODALITIES:
         content = [
@@ -108,9 +118,13 @@ def build_messages(
             {"type": "text", "text": "Conclude above text in one word:"},
         ]
     elif modality == "video":
+        if video_nframes is not None and video_fps is not None:
+            raise ValueError("video_nframes and video_fps are mutually exclusive.")
         video_item: dict[str, Any] = {"type": "video", "video": payload}
         if video_nframes is not None:
             video_item["nframes"] = video_nframes
+        if video_fps is not None:
+            video_item["fps"] = video_fps
         content = [
             video_item,
             {"type": "text", "text": "Conclude above video in one word:"},
@@ -294,7 +308,7 @@ def preprocess_dataset(config: dict[str, Any]) -> dict[str, Any]:
     processor_cfg = config["processor"]
     cache_cfg = config["cache"]
     video_cfg = config.get("video", {})
-    video_nframes = normalize_nframes(video_cfg.get("nframes"))
+    video_nframes, video_fps = sampling_values(video_cfg)
     max_samples = normalize_optional_positive_int(cache_cfg.get("max_samples"), name="max_samples")
     log_every = normalize_log_every(cache_cfg.get("log_every", 100))
     cache_media_features = normalize_bool(cache_cfg.get("cache_media_features"), default=True)
@@ -316,7 +330,11 @@ def preprocess_dataset(config: dict[str, Any]) -> dict[str, Any]:
             "must be true when caching video/audio modalities."
         )
 
-    output_dir = output_dir_with_frame_suffix(cache_cfg["output_dir"], video_nframes)
+    output_dir = output_dir_with_sampling_suffix(
+        cache_cfg["output_dir"],
+        nframes=video_nframes,
+        fps=video_fps,
+    )
     token_dir = output_dir / "text_tokens"
     feature_dir = output_dir / "feature_shards"
     token_dir.mkdir(parents=True, exist_ok=True)
@@ -427,6 +445,7 @@ def preprocess_dataset(config: dict[str, Any]) -> dict[str, Any]:
                                     modality,
                                     str(payload),
                                     video_nframes=video_nframes if modality == "video" else None,
+                                    video_fps=video_fps if modality == "video" else None,
                                 ),
                                 use_audio_in_video=modality_use_audio,
                             )
@@ -480,6 +499,7 @@ def preprocess_dataset(config: dict[str, Any]) -> dict[str, Any]:
                     "audio_path": media.audio_path,
                     "use_audio_in_video": media.use_audio_in_video,
                     "nframes": video_nframes,
+                    "fps": video_fps,
                     "available_modalities": sorted(token_item.keys()),
                     "token_shard": f"text_tokens/{token_name}",
                     "feature_shard": f"feature_shards/{feature_name}" if media_item else None,
@@ -511,6 +531,7 @@ def preprocess_dataset(config: dict[str, Any]) -> dict[str, Any]:
         "modalities_to_cache": modalities,
         "required_modalities": required_modalities,
         "nframes": video_nframes,
+        "fps": video_fps,
         "manifest_path": str(manifest_path),
         "shard_count": shard_idx,
         "skipped_examples": skipped[:20],

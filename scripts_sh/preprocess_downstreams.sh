@@ -6,6 +6,7 @@ source /root/my_conda/etc/profile.d/conda.sh
 conda activate /root/my_conda/envs/cl
 
 NFRAMES=""
+FPS=""
 MAX_SAMPLES=""
 LOG_EVERY=""
 CACHE_MEDIA_FEATURES=""
@@ -16,6 +17,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --nframes)
       NFRAMES="$2"
+      shift 2
+      ;;
+    --fps)
+      FPS="$2"
       shift 2
       ;;
     --max_samples)
@@ -45,9 +50,17 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ -n "${NFRAMES}" && -n "${FPS}" ]]; then
+  echo "--nframes and --fps are mutually exclusive" >&2
+  exit 2
+fi
+
 ARGS=()
 if [[ -n "${NFRAMES}" ]]; then
   ARGS+=(--nframes "${NFRAMES}")
+fi
+if [[ -n "${FPS}" ]]; then
+  ARGS+=(--fps "${FPS}")
 fi
 if [[ -n "${MAX_SAMPLES}" ]]; then
   ARGS+=(--max_samples "${MAX_SAMPLES}")

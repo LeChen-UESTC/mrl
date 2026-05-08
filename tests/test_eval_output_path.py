@@ -11,11 +11,13 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from eval_retrieval import parse_args
+from eval_retrieval import resolve_eval_cache_dir
 from qwen_omni_retrieval.utils.naming import (
     checkpoint_model_and_step,
     dataset_dir_name,
     default_eval_output_json,
     frame_sample_suffix,
+    sampling_cache_dir,
 )
 
 
@@ -59,6 +61,40 @@ def test_frame_sample_suffix_defaults_empty_nframes_to_2fps() -> None:
     ) == "/mnt/d/cl/mrl/outputs/eval/zero_shot/didemo/model_a_step_0000001_2fps.json"
 
 
+def test_frame_sample_suffix_supports_fps() -> None:
+    assert frame_sample_suffix({"fps": 2}) == "2fps"
+    assert default_eval_output_json(
+        {
+            "name": "msr_vtt",
+            "checkpoint_dir": "/mnt/d/cl/mrl/outputs/models/model_a/step_0000001",
+            "fps": 1.5,
+        }
+    ) == "/mnt/d/cl/mrl/outputs/eval/zero_shot/msr_vtt/model_a_step_0000001_1.5fps.json"
+
+
+def test_sampling_cache_dir_uses_requested_suffix(tmp_path: Path) -> None:
+    base = tmp_path / "msrvtt_test"
+    assert sampling_cache_dir(base, {"nframes": 12}) == tmp_path / "msrvtt_test_n_frames_12"
+    assert sampling_cache_dir(base, {"fps": 2}) == tmp_path / "msrvtt_test_fps_2"
+
+
+def test_resolve_eval_cache_dir_falls_back_to_raw_when_requested_cache_missing(tmp_path: Path) -> None:
+    base = tmp_path / "msrvtt_test"
+    cache_dir, reason = resolve_eval_cache_dir({"cache_dir": str(base), "nframes": 12})
+    assert cache_dir == tmp_path / "msrvtt_test_n_frames_12"
+    assert reason is not None
+    assert "using raw data" in reason
+
+
+def test_resolve_eval_cache_dir_uses_requested_cache_when_present(tmp_path: Path) -> None:
+    base = tmp_path / "msrvtt_test"
+    requested = tmp_path / "msrvtt_test_fps_2"
+    requested.mkdir()
+    cache_dir, reason = resolve_eval_cache_dir({"cache_dir": str(base), "fps": 2})
+    assert cache_dir == requested
+    assert reason is None
+
+
 def test_parse_args_requires_batch_size() -> None:
     old_argv = sys.argv
     stderr = io.StringIO()
@@ -76,10 +112,46 @@ def test_parse_args_requires_batch_size() -> None:
         sys.argv = old_argv
 
 
+def test_eval_sampling_cli_args_are_mutually_exclusive() -> None:
+    old_argv = sys.argv
+    stderr = io.StringIO()
+    try:
+        sys.argv = [
+            "eval_retrieval.py",
+            "--config",
+            "configs/eval/msrvtt.yaml",
+            "--batch_size",
+            "4",
+            "--nframes",
+            "12",
+            "--fps",
+            "2",
+        ]
+        try:
+            with contextlib.redirect_stderr(stderr):
+                parse_args()
+        except SystemExit as exc:
+            assert exc.code == 2
+            assert "not allowed with argument" in stderr.getvalue()
+        else:
+            raise AssertionError("--nframes and --fps together should fail")
+    finally:
+        sys.argv = old_argv
+
+
 if __name__ == "__main__":
     test_checkpoint_model_and_step_uses_parent_model_dir()
     test_dataset_dir_name_normalizes_msrvtt()
     test_default_eval_output_json_uses_zero_shot_dataset_dir()
     test_frame_sample_suffix_defaults_empty_nframes_to_2fps()
+    test_frame_sample_suffix_supports_fps()
+    with contextlib.ExitStack() as stack:
+        import tempfile
+
+        tmp_path = Path(stack.enter_context(tempfile.TemporaryDirectory()))
+        test_sampling_cache_dir_uses_requested_suffix(tmp_path)
+        test_resolve_eval_cache_dir_falls_back_to_raw_when_requested_cache_missing(tmp_path)
+        test_resolve_eval_cache_dir_uses_requested_cache_when_present(tmp_path)
     test_parse_args_requires_batch_size()
+    test_eval_sampling_cli_args_are_mutually_exclusive()
     print("ok")

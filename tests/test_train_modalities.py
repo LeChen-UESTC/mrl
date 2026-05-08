@@ -33,6 +33,7 @@ def make_args(**overrides: object) -> Namespace:
         "batch_size": None,
         "eval_batch_size": None,
         "eval_nframes": None,
+        "eval_fps": None,
         "num_workers": None,
         "learning_rate": None,
         "weight_decay": None,
@@ -185,6 +186,46 @@ def test_parse_args_requires_eval_batch_size() -> None:
         sys.argv = old_argv
 
 
+def test_eval_sampling_cli_args_are_mutually_exclusive() -> None:
+    old_argv = sys.argv
+    stderr = io.StringIO()
+    try:
+        sys.argv = [
+            "train_lora_volume.py",
+            "--config",
+            "configs/train/vast_lora_volume.yaml",
+            "--eval_batch_size",
+            "4",
+            "--eval_nframes",
+            "8",
+            "--eval_fps",
+            "2",
+        ]
+        try:
+            with contextlib.redirect_stderr(stderr):
+                parse_args()
+        except SystemExit as exc:
+            assert exc.code == 2
+            assert "not allowed with argument" in stderr.getvalue()
+        else:
+            raise AssertionError("--eval_nframes and --eval_fps together should fail")
+    finally:
+        sys.argv = old_argv
+
+
+def test_eval_fps_overrides_all_eval_datasets() -> None:
+    cfg = {
+        "training": {},
+        "eval_datasets": [{"name": "msr_vtt", "nframes": 8}, {"name": "didemo"}],
+        "loss": {},
+        "wandb": {},
+        "lora": {},
+    }
+    apply_cli_overrides(cfg, make_args(eval_fps=2.0))
+    assert [item.get("fps") for item in cfg["eval_datasets"]] == [2.0, 2.0]
+    assert all("nframes" not in item for item in cfg["eval_datasets"])
+
+
 def test_training_eval_batch_size_comes_only_from_training_cfg() -> None:
     calls: list[int] = []
     original = train_module.evaluate_one_dataset
@@ -254,6 +295,8 @@ if __name__ == "__main__":
     test_train_modalities_reject_missing_video_or_multiple_text_anchors()
     test_apply_cli_overrides_training_and_lora_args()
     test_parse_args_requires_eval_batch_size()
+    test_eval_sampling_cli_args_are_mutually_exclusive()
+    test_eval_fps_overrides_all_eval_datasets()
     test_training_eval_batch_size_comes_only_from_training_cfg()
     test_total_train_steps_respects_epoch_count_and_step_cap()
     test_prepare_training_names_sets_model_output_dir_and_wandb_name()

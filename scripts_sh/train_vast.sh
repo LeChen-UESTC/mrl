@@ -14,6 +14,7 @@ MAX_STEPS=""
 BATCH_SIZE=""
 EVAL_BATCH_SIZE=""
 EVAL_NFRAMES=""
+EVAL_FPS=""
 NUM_WORKERS=""
 LEARNING_RATE=""
 WEIGHT_DECAY=""
@@ -73,6 +74,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --eval_nframes)
       EVAL_NFRAMES="$2"
+      shift 2
+      ;;
+    --eval_fps)
+      EVAL_FPS="$2"
       shift 2
       ;;
     --num_workers)
@@ -149,6 +154,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ -n "${EVAL_NFRAMES}" && -n "${EVAL_FPS}" ]]; then
+  echo "--eval_nframes and --eval_fps are mutually exclusive" >&2
+  exit 2
+fi
+
 ARGS=(--config "${CONFIG}")
 if [[ "${#MODALITIES[@]}" -gt 0 ]]; then
   ARGS+=(--modality "${MODALITIES[@]}")
@@ -170,6 +180,9 @@ if [[ -n "${EVAL_BATCH_SIZE}" ]]; then
 fi
 if [[ -n "${EVAL_NFRAMES}" ]]; then
   ARGS+=(--eval_nframes "${EVAL_NFRAMES}")
+fi
+if [[ -n "${EVAL_FPS}" ]]; then
+  ARGS+=(--eval_fps "${EVAL_FPS}")
 fi
 if [[ -n "${NUM_WORKERS}" ]]; then
   ARGS+=(--num_workers "${NUM_WORKERS}")

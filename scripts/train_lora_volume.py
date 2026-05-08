@@ -55,7 +55,14 @@ from qwen_omni_retrieval.utils.distributed import (
     is_main_process,
     setup_distributed,
 )
-from qwen_omni_retrieval.utils.naming import DEFAULT_MODEL_OUTPUT_ROOT, training_run_name
+from qwen_omni_retrieval.utils.naming import (
+    DEFAULT_MODEL_OUTPUT_ROOT,
+    sampling_cache_dir,
+    sampling_cache_suffix,
+    sampling_description,
+    sampling_values,
+    training_run_name,
+)
 from qwen_omni_retrieval.utils.seed import set_seed
 from qwen_omni_retrieval.utils.tensor import move_to_device
 
@@ -72,7 +79,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max_steps", type=int, default=None)
     parser.add_argument("--batch_size", type=int, default=None)
     parser.add_argument("--eval_batch_size", type=int, required=True)
-    parser.add_argument("--eval_nframes", type=int, default=None)
+    sampling_group = parser.add_mutually_exclusive_group()
+    sampling_group.add_argument("--eval_nframes", type=int, default=None)
+    sampling_group.add_argument("--eval_fps", type=float, default=None)
     parser.add_argument("--num_workers", type=int, default=None)
     parser.add_argument("--learning_rate", type=float, default=None)
     parser.add_argument("--weight_decay", type=float, default=None)
@@ -116,19 +125,25 @@ def str_to_bool(value: Any, *, default: bool) -> bool:
     raise ValueError(f"Expected a boolean value, got {value!r}.")
 
 
-def optional_positive_int(value: Any, *, name: str) -> int | None:
-    if value is None or value == "":
-        return None
-    number = int(value)
-    if number <= 0:
-        raise ValueError(f"{name} must be positive when set, got {number}.")
-    return number
-
-
 def eval_video_nframes(eval_cfg: dict[str, Any]) -> int | None:
-    if "nframes" in eval_cfg:
-        return optional_positive_int(eval_cfg.get("nframes"), name="eval nframes")
-    return optional_positive_int(eval_cfg.get("video", {}).get("nframes"), name="eval video.nframes")
+    nframes, _ = sampling_values(eval_cfg)
+    return nframes
+
+
+def eval_video_fps(eval_cfg: dict[str, Any]) -> float | None:
+    _, fps = sampling_values(eval_cfg)
+    return fps
+
+
+def resolve_eval_cache_dir(eval_cfg: dict[str, Any]) -> tuple[Path, str | None]:
+    cache_dir = sampling_cache_dir(eval_cfg["cache_dir"], eval_cfg)
+    if sampling_cache_suffix(eval_cfg) and not cache_dir.exists():
+        reason = (
+            f"requested cache for {sampling_description(eval_cfg)} not found at {cache_dir}; "
+            "using raw data"
+        )
+        return cache_dir, reason
+    return cache_dir, None
 
 
 def resolve_training_modalities(training_cfg: dict[str, Any], *, dataset_name: str) -> list[str]:
@@ -235,6 +250,11 @@ def apply_cli_overrides(cfg: dict[str, Any], args: argparse.Namespace) -> None:
     if args.eval_nframes is not None:
         for eval_cfg in cfg.get("eval_datasets", []):
             eval_cfg["nframes"] = args.eval_nframes
+            eval_cfg.pop("fps", None)
+    if args.eval_fps is not None:
+        for eval_cfg in cfg.get("eval_datasets", []):
+            eval_cfg["fps"] = args.eval_fps
+            eval_cfg.pop("nframes", None)
 
     if args.loss_mode is not None:
         loss_cfg = cfg.setdefault("loss", {})
@@ -379,9 +399,12 @@ def evaluate_one_dataset(
 
     dataset_source = "cache"
     raw_mode = False
+    cache_dir, forced_raw_reason = resolve_eval_cache_dir(eval_cfg)
     try:
+        if forced_raw_reason is not None:
+            raise FileNotFoundError(forced_raw_reason)
         dataset = CachedRetrievalDataset(
-            eval_cfg["cache_dir"],
+            cache_dir,
             required_modalities=required,
             caption_selection=eval_cfg.get("caption_selection", "random"),
         )
@@ -438,6 +461,7 @@ def evaluate_one_dataset(
                     processor=processor,
                     pad_token_id=pad_id,
                     video_nframes=eval_video_nframes(eval_cfg),
+                    video_fps=eval_video_fps(eval_cfg),
                 )
                 raw_skipped.extend(skipped)
                 if not valid_positions:

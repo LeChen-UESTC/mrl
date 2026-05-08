@@ -52,6 +52,66 @@ def compact_lr(value: Any) -> str:
     return compact_float(number)
 
 
+def normalize_sampling_nframes(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    number = int(value)
+    if number <= 0:
+        raise ValueError(f"nframes must be a positive integer when set, got {number}.")
+    return number
+
+
+def normalize_sampling_fps(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    number = float(value)
+    if number <= 0:
+        raise ValueError(f"fps must be positive when set, got {number}.")
+    return number
+
+
+def sampling_values(config: dict[str, Any]) -> tuple[int | None, float | None]:
+    nframes = config.get("nframes")
+    fps = config.get("fps")
+    video_cfg = config.get("video")
+    if isinstance(video_cfg, dict):
+        if nframes is None:
+            nframes = video_cfg.get("nframes")
+        if fps is None:
+            fps = video_cfg.get("fps")
+    normalized_nframes = normalize_sampling_nframes(nframes)
+    normalized_fps = normalize_sampling_fps(fps)
+    if normalized_nframes is not None and normalized_fps is not None:
+        raise ValueError("nframes and fps are mutually exclusive; specify only one.")
+    return normalized_nframes, normalized_fps
+
+
+def sampling_cache_suffix(config: dict[str, Any]) -> str:
+    nframes, fps = sampling_values(config)
+    if nframes is not None:
+        return f"_n_frames_{nframes}"
+    if fps is not None:
+        return f"_fps_{compact_float(fps)}"
+    return ""
+
+
+def sampling_description(config: dict[str, Any]) -> str:
+    nframes, fps = sampling_values(config)
+    if nframes is not None:
+        return f"nframes={nframes}"
+    if fps is not None:
+        return f"fps={compact_float(fps)}"
+    return "processor default fps"
+
+
+def sampling_cache_dir(cache_dir: str | Path, config: dict[str, Any]) -> Path:
+    cache_path = Path(cache_dir)
+    suffix = sampling_cache_suffix(config)
+    if not suffix or cache_path.name.endswith(suffix):
+        return cache_path
+    return cache_path.with_name(f"{cache_path.name}{suffix}")
+
+
 def dataset_dir_name(dataset_name: str) -> str:
     normalized = str(dataset_name).strip().lower()
     return DATASET_DIR_NAMES.get(normalized, sanitize_name(dataset_name))
@@ -108,12 +168,12 @@ def checkpoint_model_and_step(checkpoint_dir: str | Path | None) -> tuple[str, s
 
 
 def frame_sample_suffix(eval_cfg: dict[str, Any]) -> str:
-    nframes = eval_cfg.get("nframes")
-    if nframes is None and isinstance(eval_cfg.get("video"), dict):
-        nframes = eval_cfg["video"].get("nframes")
-    if nframes is None or nframes == "":
-        return "2fps"
-    return f"{sanitize_name(nframes)}frames"
+    nframes, fps = sampling_values(eval_cfg)
+    if nframes is not None:
+        return f"{sanitize_name(nframes)}frames"
+    if fps is not None:
+        return f"{sanitize_name(compact_float(fps))}fps"
+    return "2fps"
 
 
 def default_eval_output_json(eval_cfg: dict[str, Any]) -> str:

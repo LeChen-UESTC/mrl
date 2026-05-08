@@ -120,6 +120,7 @@ def raw_batch_to_model_inputs(
     processor: Any,
     pad_token_id: int,
     video_nframes: int | None = None,
+    video_fps: float | None = None,
 ) -> tuple[dict[str, dict[str, torch.Tensor]], list[int], list[dict[str, str]]]:
     per_modality: dict[str, list[dict[str, torch.Tensor]]] = {
         modality: [] for modality in required_modalities
@@ -138,6 +139,7 @@ def raw_batch_to_model_inputs(
                         modality,
                         payloads[modality],
                         video_nframes=video_nframes if modality == "video" else None,
+                        video_fps=video_fps if modality == "video" else None,
                     ),
                     use_audio_in_video=use_audio,
                 )

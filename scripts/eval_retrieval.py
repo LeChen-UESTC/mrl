@@ -45,7 +45,13 @@ from qwen_omni_retrieval.utils.distributed import (
     is_main_process,
     setup_distributed,
 )
-from qwen_omni_retrieval.utils.naming import default_eval_output_json
+from qwen_omni_retrieval.utils.naming import (
+    default_eval_output_json,
+    sampling_cache_dir,
+    sampling_cache_suffix,
+    sampling_description,
+    sampling_values,
+)
 from qwen_omni_retrieval.utils.tensor import move_to_device
 
 
@@ -62,7 +68,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--loss_mode", choices=["inverse_volume", "neg_log", "cosine"], default=None)
     parser.add_argument("--batch_size", type=int, required=True)
     parser.add_argument("--num_workers", type=int, default=None)
-    parser.add_argument("--nframes", type=int, default=None)
+    sampling_group = parser.add_mutually_exclusive_group()
+    sampling_group.add_argument("--nframes", type=int, default=None)
+    sampling_group.add_argument("--fps", type=float, default=None)
     parser.add_argument("--output_json")
     return parser.parse_args()
 
@@ -73,19 +81,25 @@ def pad_token_id(processor: Any) -> int:
     return 0 if value is None else int(value)
 
 
-def optional_positive_int(value: Any, *, name: str) -> int | None:
-    if value is None or value == "":
-        return None
-    number = int(value)
-    if number <= 0:
-        raise ValueError(f"{name} must be positive when set, got {number}.")
-    return number
-
-
 def eval_video_nframes(eval_cfg: dict[str, Any]) -> int | None:
-    if "nframes" in eval_cfg:
-        return optional_positive_int(eval_cfg.get("nframes"), name="eval nframes")
-    return optional_positive_int(eval_cfg.get("video", {}).get("nframes"), name="eval video.nframes")
+    nframes, _ = sampling_values(eval_cfg)
+    return nframes
+
+
+def eval_video_fps(eval_cfg: dict[str, Any]) -> float | None:
+    _, fps = sampling_values(eval_cfg)
+    return fps
+
+
+def resolve_eval_cache_dir(eval_cfg: dict[str, Any]) -> tuple[Path, str | None]:
+    cache_dir = sampling_cache_dir(eval_cfg["cache_dir"], eval_cfg)
+    if sampling_cache_suffix(eval_cfg) and not cache_dir.exists():
+        reason = (
+            f"requested cache for {sampling_description(eval_cfg)} not found at {cache_dir}; "
+            "using raw data"
+        )
+        return cache_dir, reason
+    return cache_dir, None
 
 
 def progress_iter(loader: DataLoader, *, dataset_name: str, dataset_source: str) -> Any:
@@ -188,9 +202,12 @@ def run_eval(cfg: dict[str, Any], model: Any, processor: Any, device: torch.devi
 
     dataset_source = "cache"
     raw_mode = False
+    cache_dir, forced_raw_reason = resolve_eval_cache_dir(eval_cfg)
     try:
+        if forced_raw_reason is not None:
+            raise FileNotFoundError(forced_raw_reason)
         dataset = CachedRetrievalDataset(
-            eval_cfg["cache_dir"],
+            cache_dir,
             required_modalities=required,
             caption_selection=eval_cfg.get("caption_selection", "random"),
         )
@@ -200,7 +217,7 @@ def run_eval(cfg: dict[str, Any], model: Any, processor: Any, device: torch.devi
                 {
                     "eval_dataset": dataset_name,
                     "source": "cache",
-                    "cache_dir": eval_cfg["cache_dir"],
+                    "cache_dir": str(cache_dir),
                     "records": len(dataset),
                     "required_modalities": required,
                 },
@@ -269,6 +286,7 @@ def run_eval(cfg: dict[str, Any], model: Any, processor: Any, device: torch.devi
                     processor=processor,
                     pad_token_id=pad_id,
                     video_nframes=eval_video_nframes(eval_cfg),
+                    video_fps=eval_video_fps(eval_cfg),
                 )
                 raw_skipped.extend(skipped)
                 if not valid_positions:
@@ -355,6 +373,10 @@ def main() -> None:
         cfg["eval"]["num_workers"] = args.num_workers
     if args.nframes is not None:
         cfg["eval"]["nframes"] = args.nframes
+        cfg["eval"].pop("fps", None)
+    if args.fps is not None:
+        cfg["eval"]["fps"] = args.fps
+        cfg["eval"].pop("nframes", None)
     if args.output_json:
         cfg["eval"]["output_json"] = args.output_json
     else:
