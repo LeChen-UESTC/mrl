@@ -32,7 +32,7 @@ from qwen_omni_retrieval.data.raw_dataset import (
 )
 from qwen_omni_retrieval.data.sampler import DistributedEvalSampler
 from qwen_omni_retrieval.evaluation.retrieval import evaluate_retrieval_from_embeddings
-from qwen_omni_retrieval.losses.contrastive import resolve_loss_mode
+from qwen_omni_retrieval.losses.contrastive import resolve_loss_mode, resolve_score_mode
 from qwen_omni_retrieval.models.projection import ProjectionHead
 from qwen_omni_retrieval.models.qwen_thinker import infer_hidden_size, load_qwen_thinker_and_processor
 from qwen_omni_retrieval.models.retrieval_model import QwenOmniRetrievalModel
@@ -45,6 +45,7 @@ from qwen_omni_retrieval.utils.distributed import (
     is_main_process,
     setup_distributed,
 )
+from qwen_omni_retrieval.utils.naming import default_eval_output_json
 from qwen_omni_retrieval.utils.tensor import move_to_device
 
 
@@ -85,34 +86,6 @@ def eval_video_nframes(eval_cfg: dict[str, Any]) -> int | None:
     if "nframes" in eval_cfg:
         return optional_positive_int(eval_cfg.get("nframes"), name="eval nframes")
     return optional_positive_int(eval_cfg.get("video", {}).get("nframes"), name="eval video.nframes")
-
-
-def sanitize_output_segment(value: str) -> str:
-    return "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in value)
-
-
-def checkpoint_output_suffix(checkpoint_dir: str | Path | None) -> str | None:
-    if not checkpoint_dir:
-        return None
-    checkpoint_path = Path(str(checkpoint_dir).rstrip("/"))
-    parts = [part for part in checkpoint_path.parts if part not in {checkpoint_path.anchor, "", "/"}]
-    tail = parts[-2:] if len(parts) >= 2 else parts[-1:]
-    suffix = "_".join(sanitize_output_segment(part) for part in tail if part)
-    return suffix or None
-
-
-def output_json_with_checkpoint_suffix(output_json: str | Path | None, checkpoint_dir: str | Path | None) -> str | None:
-    if not output_json:
-        return None
-    suffix = checkpoint_output_suffix(checkpoint_dir)
-    if not suffix:
-        return str(output_json)
-
-    output_path = Path(output_json)
-    stem_suffix = f"_{suffix}"
-    if output_path.stem.endswith(stem_suffix):
-        return str(output_path)
-    return str(output_path.with_name(f"{output_path.stem}{stem_suffix}{output_path.suffix}"))
 
 
 def progress_iter(loader: DataLoader, *, dataset_name: str, dataset_source: str) -> Any:
@@ -353,7 +326,7 @@ def run_eval(cfg: dict[str, Any], model: Any, processor: Any, device: torch.devi
         query_ids=ids,
         target_ids=ids,
         mode=loss_mode,
-        score_mode=loss_cfg.get("score_mode", "inverse_volume"),
+        score_mode=resolve_score_mode(loss_cfg),
         scale=float(loss_cfg.get("volume_scale", 10.0)),
         temperature=float(loss_cfg.get("temperature", 1.0)),
         eps=float(loss_cfg.get("volume_eps", 1.0e-6)),
@@ -376,7 +349,6 @@ def main() -> None:
         cfg["eval"]["auxiliary_modalities"] = parse_modalities(args.aux)
     if args.loss_mode is not None:
         cfg.setdefault("loss", {})["mode"] = args.loss_mode
-        cfg["loss"]["score_mode"] = args.loss_mode
     if args.batch_size is not None:
         cfg["eval"]["batch_size"] = args.batch_size
     if args.num_workers is not None:
@@ -386,10 +358,7 @@ def main() -> None:
     if args.output_json:
         cfg["eval"]["output_json"] = args.output_json
     else:
-        cfg["eval"]["output_json"] = output_json_with_checkpoint_suffix(
-            cfg["eval"].get("output_json"),
-            cfg["eval"].get("checkpoint_dir"),
-        )
+        cfg["eval"]["output_json"] = default_eval_output_json(cfg["eval"])
 
     device, _, _, _ = setup_distributed()
     try:
@@ -398,6 +367,7 @@ def main() -> None:
                 {
                     "eval_stage": "load_model",
                     "checkpoint_dir": cfg["eval"].get("checkpoint_dir"),
+                    "output_json": cfg["eval"].get("output_json"),
                     "device": str(device),
                 },
                 flush=True,

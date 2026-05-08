@@ -18,6 +18,14 @@ def resolve_loss_mode(loss_cfg: dict | None) -> str:
     return mode
 
 
+def resolve_score_mode(loss_cfg: dict | None) -> str:
+    loss_cfg = loss_cfg or {}
+    mode = loss_cfg.get("score_mode", loss_cfg.get("mode", "inverse_volume"))
+    if mode not in LOSS_MODES:
+        raise ValueError(f"Unsupported score mode: {mode}. Supported modes: {sorted(LOSS_MODES)}")
+    return mode
+
+
 def symmetric_gram_contrastive_loss(
     anchor: torch.Tensor,
     candidate_modalities: list[torch.Tensor],

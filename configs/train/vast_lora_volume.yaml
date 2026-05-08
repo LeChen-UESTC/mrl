@@ -23,7 +23,6 @@ projection:
 
 loss:
   mode: inverse_volume # inverse_volume / neg_log / cosine
-  score_mode: inverse_volume
   volume_scale: 10.0
   volume_eps: 1.0e-6
   label_smoothing: 0.1
@@ -32,7 +31,6 @@ loss:
 training:
   dataset_name: vast
   cache_dir: /mnt/d/cl/mrl/data_cache/vast_train
-  output_dir: /mnt/d/cl/mrl/outputs/vast_lora_volume
   modalities:
     - vision_cap
     - video
@@ -55,7 +53,7 @@ training:
   gradient_checkpointing: true
 
 eval_datasets:
-  - name: msrvtt
+  - name: msr_vtt
     cache_dir: /mnt/d/cl/mrl/data_cache/msrvtt_test
     anno_path: /mnt/d/data/msrvtt/test_silence_flitered_884.json
     video_dir: /mnt/d/data/msrvtt/data/all-video
@@ -104,5 +102,4 @@ eval_datasets:
 wandb:
   enabled: true
   project: qwen-omni-retrieval
-  name: vast-lora-volume
   mode:

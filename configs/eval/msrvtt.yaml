@@ -12,18 +12,17 @@ projection:
 
 loss:
   mode: inverse_volume
-  score_mode: inverse_volume
   volume_scale: 10.0
   volume_eps: 1.0e-6
   temperature: 1.0
 
 eval:
-  name: msrvtt
+  name: msr_vtt
   cache_dir: /mnt/d/cl/mrl/data_cache/msrvtt_test
   anno_path: /mnt/d/data/msrvtt/test_silence_flitered_884.json
   video_dir: /mnt/d/data/msrvtt/data/all-video
   audio_dir: /mnt/d/data/msrvtt/data/all-audio
-  checkpoint_dir: /mnt/d/cl/mrl/outputs/vast_lora_volume/step_0000000
+  checkpoint_dir: /mnt/d/cl/mrl/outputs/models/train_vast_inverse_volume_vision_cap-video-audio_lr1e-4_lora-r16-a32-d0.05_proj-shared-1024/step_0000000
   query_modality: vision_cap
   target_modality: video
   auxiliary_modalities:
@@ -34,4 +33,3 @@ eval:
   caption_selection: random
   batch_size: 4
   num_workers: 8
-  output_json: /mnt/d/cl/mrl/outputs/eval_msrvtt.json

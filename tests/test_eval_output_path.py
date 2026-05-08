@@ -5,35 +5,44 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "src"))
 
-from eval_retrieval import checkpoint_output_suffix, output_json_with_checkpoint_suffix
+from qwen_omni_retrieval.utils.naming import (
+    checkpoint_model_and_step,
+    dataset_dir_name,
+    default_eval_output_json,
+)
 
 
-def test_checkpoint_output_suffix_uses_last_two_path_parts() -> None:
-    assert (
-        checkpoint_output_suffix("/mnt/d/cl/mrl/outputs/vast_lora_volume/step_0001000")
-        == "vast_lora_volume_step_0001000"
+def test_checkpoint_model_and_step_uses_parent_model_dir() -> None:
+    assert checkpoint_model_and_step(
+        "/mnt/d/cl/mrl/outputs/models/train_vast_inverse_volume_video-audio-vision_cap_lr5e-5_lora-r16-a32-d0.05_proj-shared-1024/step_0001000"
+    ) == (
+        "train_vast_inverse_volume_video-audio-vision_cap_lr5e-5_lora-r16-a32-d0.05_proj-shared-1024",
+        "step_0001000",
     )
 
 
-def test_output_json_gets_checkpoint_suffix() -> None:
-    assert output_json_with_checkpoint_suffix(
-        "/mnt/d/cl/mrl/outputs/eval_msrvtt.json",
-        "/mnt/d/cl/mrl/outputs/vast_lora_volume/step_0000000",
-    ) == "/mnt/d/cl/mrl/outputs/eval_msrvtt_vast_lora_volume_step_0000000.json"
+def test_dataset_dir_name_normalizes_msrvtt() -> None:
+    assert dataset_dir_name("msrvtt") == "msr_vtt"
+    assert dataset_dir_name("msr_vtt") == "msr_vtt"
 
 
-def test_output_json_suffix_is_not_duplicated() -> None:
-    output_path = "/mnt/d/cl/mrl/outputs/eval_msrvtt_vast_lora_volume_step_0000000.json"
-    assert output_json_with_checkpoint_suffix(
-        output_path,
-        "/mnt/d/cl/mrl/outputs/vast_lora_volume/step_0000000",
-    ) == output_path
+def test_default_eval_output_json_uses_zero_shot_dataset_dir() -> None:
+    output_path = default_eval_output_json(
+        {
+            "name": "msr_vtt",
+            "checkpoint_dir": "/mnt/d/cl/mrl/outputs/models/train_vast_inverse_volume_video-audio-vision_cap_lr5e-5_lora-r16-a32-d0.05_proj-shared-1024/step_0001000",
+        }
+    )
+    assert output_path == (
+        "/mnt/d/cl/mrl/outputs/eval/zero_shot/msr_vtt/"
+        "train_vast_inverse_volume_video-audio-vision_cap_lr5e-5_lora-r16-a32-d0.05_proj-shared-1024_step_0001000.json"
+    )
 
 
 if __name__ == "__main__":
-    test_checkpoint_output_suffix_uses_last_two_path_parts()
-    test_output_json_gets_checkpoint_suffix()
-    test_output_json_suffix_is_not_duplicated()
+    test_checkpoint_model_and_step_uses_parent_model_dir()
+    test_dataset_dir_name_normalizes_msrvtt()
+    test_default_eval_output_json_uses_zero_shot_dataset_dir()
     print("ok")

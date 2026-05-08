@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from qwen_omni_retrieval.data.modality import normalize_train_modalities, parse_modalities
 from train_lora_volume import (
     apply_cli_overrides,
+    prepare_training_names,
     resolve_training_modalities,
     total_train_steps,
     training_loss_mode,
@@ -22,7 +23,6 @@ def make_args(**overrides: object) -> Namespace:
     defaults = {
         "modality": None,
         "extra_modalities": None,
-        "output_dir": None,
         "epochs": None,
         "max_steps": None,
         "batch_size": None,
@@ -113,7 +113,6 @@ def test_apply_cli_overrides_training_and_lora_args() -> None:
         cfg,
         make_args(
             modality=["video", "audio", "vision_cap"],
-            output_dir="/tmp/out",
             epochs=3,
             max_steps=10000,
             batch_size=2,
@@ -138,7 +137,6 @@ def test_apply_cli_overrides_training_and_lora_args() -> None:
 
     assert cfg["training"]["modalities"] == ["video", "audio", "vision_cap"]
     assert "extra_modalities" not in cfg["training"]
-    assert cfg["training"]["output_dir"] == "/tmp/out"
     assert cfg["training"]["epochs"] == 3
     assert cfg["training"]["max_steps"] == 10000
     assert cfg["training"]["batch_size"] == 2
@@ -152,7 +150,7 @@ def test_apply_cli_overrides_training_and_lora_args() -> None:
     assert cfg["training"]["eval_steps"] == 250
     assert cfg["training"]["do_eval"] is False
     assert cfg["loss"]["mode"] == "neg_log"
-    assert cfg["loss"]["score_mode"] == "neg_log"
+    assert "score_mode" not in cfg["loss"]
     assert cfg["wandb"]["mode"] == "offline"
     assert cfg["lora"]["r"] == 32
     assert cfg["lora"]["alpha"] == 64
@@ -167,6 +165,30 @@ def test_total_train_steps_respects_epoch_count_and_step_cap() -> None:
     assert total_train_steps(epochs=1, batches_per_epoch=100, max_steps=200) == 100
 
 
+def test_prepare_training_names_sets_model_output_dir_and_wandb_name() -> None:
+    cfg = {
+        "training": {
+            "dataset_name": "vast",
+            "modalities": ["video", "audio", "vision_cap"],
+            "learning_rate": 5.0e-5,
+        },
+        "loss": {"mode": "inverse_volume"},
+        "lora": {"r": 16, "alpha": 32, "dropout": 0.05},
+        "projection": {"mode": "shared", "embed_dim": 1024},
+        "wandb": {"name": "old-name"},
+    }
+    run_name = prepare_training_names(
+        cfg,
+        dataset_name="vast",
+        train_modalities=["vision_cap", "video", "audio"],
+    )
+    expected = "train_vast_inverse_volume_video-audio-vision_cap_lr5e-5_lora-r16-a32-d0.05_proj-shared-1024"
+    assert run_name == expected
+    assert cfg["training"]["model_name"] == expected
+    assert cfg["training"]["output_dir"] == f"/mnt/d/cl/mrl/outputs/models/{expected}"
+    assert cfg["wandb"]["name"] == expected
+
+
 if __name__ == "__main__":
     test_parse_modalities_splits_list_items_with_commas()
     test_train_modalities_are_ordered_by_text_anchor_and_video()
@@ -176,4 +198,5 @@ if __name__ == "__main__":
     test_train_modalities_reject_missing_video_or_multiple_text_anchors()
     test_apply_cli_overrides_training_and_lora_args()
     test_total_train_steps_respects_epoch_count_and_step_cap()
+    test_prepare_training_names_sets_model_output_dir_and_wandb_name()
     print("ok")

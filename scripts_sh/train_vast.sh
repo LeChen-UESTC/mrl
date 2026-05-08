@@ -9,7 +9,6 @@ EXTRA=""
 MODALITIES=()
 NPROC_PER_NODE="${NPROC_PER_NODE:-8}"
 CONFIG="${ROOT_DIR}/configs/train/vast_lora_volume.yaml"
-OUTPUT_DIR=""
 EPOCHS=""
 MAX_STEPS=""
 BATCH_SIZE=""
@@ -53,10 +52,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --config)
       CONFIG="$2"
-      shift 2
-      ;;
-    --output_dir)
-      OUTPUT_DIR="$2"
       shift 2
       ;;
     --epochs)
@@ -155,9 +150,6 @@ if [[ "${#MODALITIES[@]}" -gt 0 ]]; then
 fi
 if [[ -n "${EXTRA}" ]]; then
   ARGS+=(--extra_modalities "${EXTRA}")
-fi
-if [[ -n "${OUTPUT_DIR}" ]]; then
-  ARGS+=(--output_dir "${OUTPUT_DIR}")
 fi
 if [[ -n "${EPOCHS}" ]]; then
   ARGS+=(--epochs "${EPOCHS}")

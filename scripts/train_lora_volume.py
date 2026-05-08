@@ -35,7 +35,11 @@ from qwen_omni_retrieval.data.raw_dataset import (
 )
 from qwen_omni_retrieval.data.sampler import DistributedEvalSampler
 from qwen_omni_retrieval.evaluation.retrieval import evaluate_retrieval_from_embeddings
-from qwen_omni_retrieval.losses.contrastive import resolve_loss_mode, symmetric_contrastive_loss
+from qwen_omni_retrieval.losses.contrastive import (
+    resolve_loss_mode,
+    resolve_score_mode,
+    symmetric_contrastive_loss,
+)
 from qwen_omni_retrieval.models.lora import apply_lora, trainable_parameter_summary
 from qwen_omni_retrieval.models.projection import ProjectionHead
 from qwen_omni_retrieval.models.qwen_thinker import infer_hidden_size, load_qwen_thinker_and_processor
@@ -51,6 +55,7 @@ from qwen_omni_retrieval.utils.distributed import (
     is_main_process,
     setup_distributed,
 )
+from qwen_omni_retrieval.utils.naming import DEFAULT_MODEL_OUTPUT_ROOT, training_run_name
 from qwen_omni_retrieval.utils.seed import set_seed
 from qwen_omni_retrieval.utils.tensor import move_to_device
 
@@ -63,7 +68,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", required=True)
     parser.add_argument("--modality", nargs="+", default=None)
     parser.add_argument("--extra_modalities", default=None)
-    parser.add_argument("--output_dir", default=None)
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--max_steps", type=int, default=None)
     parser.add_argument("--batch_size", type=int, default=None)
@@ -167,6 +171,34 @@ def training_loss_mode(modalities: list[str], loss_cfg: dict[str, Any]) -> str:
     return configured if configured != "cosine" else "inverse_volume"
 
 
+def configured_modalities_for_name(training_cfg: dict[str, Any], train_modalities: list[str]) -> list[str]:
+    configured = parse_modalities(training_cfg.get("modalities"))
+    return configured or train_modalities
+
+
+def prepare_training_names(
+    cfg: dict[str, Any],
+    *,
+    dataset_name: str,
+    train_modalities: list[str],
+) -> str:
+    training_cfg = cfg.setdefault("training", {})
+    run_name = training_run_name(
+        dataset_name=dataset_name,
+        loss_mode=training_loss_mode(train_modalities, cfg.get("loss", {})),
+        modalities=configured_modalities_for_name(training_cfg, train_modalities),
+        learning_rate=training_cfg.get("learning_rate", 1.0e-4),
+        lora_cfg=cfg.get("lora", {}),
+        projection_cfg=cfg.get("projection", {}),
+    )
+    output_root = Path(training_cfg.get("output_root", DEFAULT_MODEL_OUTPUT_ROOT))
+    training_cfg["model_name"] = run_name
+    training_cfg["output_root"] = str(output_root)
+    training_cfg["output_dir"] = str(output_root / run_name)
+    cfg.setdefault("wandb", {})["name"] = run_name
+    return run_name
+
+
 def set_cli_override(args: argparse.Namespace, section: dict[str, Any], arg_name: str, cfg_name: str | None = None) -> None:
     value = getattr(args, arg_name, None)
     if value is not None:
@@ -184,7 +216,6 @@ def apply_cli_overrides(cfg: dict[str, Any], args: argparse.Namespace) -> None:
         training_cfg["extra_modalities"] = parse_modalities(args.extra_modalities)
 
     for arg_name in (
-        "output_dir",
         "epochs",
         "max_steps",
         "batch_size",
@@ -204,7 +235,6 @@ def apply_cli_overrides(cfg: dict[str, Any], args: argparse.Namespace) -> None:
     if args.loss_mode is not None:
         loss_cfg = cfg.setdefault("loss", {})
         loss_cfg["mode"] = args.loss_mode
-        loss_cfg["score_mode"] = args.loss_mode
     if args.wandb_mode is not None:
         cfg.setdefault("wandb", {})["mode"] = args.wandb_mode
 
@@ -459,7 +489,7 @@ def evaluate_one_dataset(
         query_ids=ids,
         target_ids=ids,
         mode=resolve_loss_mode(loss_cfg),
-        score_mode=loss_cfg.get("score_mode", "inverse_volume"),
+        score_mode=resolve_score_mode(loss_cfg),
         scale=float(loss_cfg.get("volume_scale", 10.0)),
         temperature=float(loss_cfg.get("temperature", 1.0)),
         eps=float(loss_cfg.get("volume_eps", 1.0e-6)),
@@ -535,11 +565,18 @@ def main() -> None:
         dataset_name = cfg["training"].get("dataset_name", "vast")
         train_modalities = resolve_training_modalities(cfg["training"], dataset_name=dataset_name)
         text_anchor = training_text_anchor(train_modalities)
+        model_name = prepare_training_names(
+            cfg,
+            dataset_name=dataset_name,
+            train_modalities=train_modalities,
+        )
 
         model, processor = build_model(cfg, device)
         if is_main_process():
             print(
                 {
+                    "model_name": model_name,
+                    "output_dir": cfg["training"]["output_dir"],
                     "trainable_parameters": trainable_parameter_summary(model),
                     "train_modalities": train_modalities,
                     "train_loss_mode": training_loss_mode(train_modalities, cfg.get("loss", {})),

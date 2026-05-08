@@ -12,7 +12,6 @@ projection:
 
 loss:
   mode: inverse_volume
-  score_mode: inverse_volume
   volume_scale: 10.0
   volume_eps: 1.0e-6
   temperature: 1.0
@@ -23,7 +22,7 @@ eval:
   anno_path: /mnt/d/data/didemo/test_silence_flitered_998.json
   video_dir: /mnt/d/data/didemo/video
   audio_dir:
-  checkpoint_dir: /mnt/d/cl/mrl/outputs/vast_lora_volume/step_0000000
+  checkpoint_dir: /mnt/d/cl/mrl/outputs/models/train_vast_inverse_volume_vision_cap-video-audio_lr1e-4_lora-r16-a32-d0.05_proj-shared-1024/step_0000000
   query_modality: vision_cap
   target_modality: video
   auxiliary_modalities:
@@ -34,4 +33,3 @@ eval:
   caption_selection: random
   batch_size: 1
   num_workers: 2
-  output_json: /mnt/d/cl/mrl/outputs/eval_didemo.json
