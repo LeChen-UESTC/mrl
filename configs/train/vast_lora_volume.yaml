@@ -38,7 +38,6 @@ training:
   use_audio_in_video: true
   caption_selection: random
   batch_size: 1
-  eval_batch_size: 1
   num_workers: 2
   epochs: 1
   max_steps: 0
@@ -66,7 +65,6 @@ eval_datasets:
     auxiliary_modalities:
       - audio
     caption_selection: random
-    batch_size: 1
     num_workers: 2
   - name: didemo
     cache_dir: /mnt/d/cl/mrl/data_cache/didemo_test
@@ -81,7 +79,6 @@ eval_datasets:
     auxiliary_modalities:
       - audio
     caption_selection: random
-    batch_size: 1
     num_workers: 2
   - name: vatex
     cache_dir: /mnt/d/cl/mrl/data_cache/vatex_test
@@ -96,7 +93,6 @@ eval_datasets:
     auxiliary_modalities:
       - audio
     caption_selection: random
-    batch_size: 1
     num_workers: 2
 
 wandb:

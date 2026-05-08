@@ -31,5 +31,4 @@ eval:
   audio_from_video_if_missing: true
   nframes:
   caption_selection: random
-  batch_size: 1
   num_workers: 2

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import sys
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "scripts"))
 
+from eval_retrieval import parse_args
 from qwen_omni_retrieval.utils.naming import (
     checkpoint_model_and_step,
     dataset_dir_name,
@@ -55,9 +59,27 @@ def test_frame_sample_suffix_defaults_empty_nframes_to_2fps() -> None:
     ) == "/mnt/d/cl/mrl/outputs/eval/zero_shot/didemo/model_a_step_0000001_2fps.json"
 
 
+def test_parse_args_requires_batch_size() -> None:
+    old_argv = sys.argv
+    stderr = io.StringIO()
+    try:
+        sys.argv = ["eval_retrieval.py", "--config", "configs/eval/msrvtt.yaml"]
+        try:
+            with contextlib.redirect_stderr(stderr):
+                parse_args()
+        except SystemExit as exc:
+            assert exc.code == 2
+            assert "--batch_size" in stderr.getvalue()
+        else:
+            raise AssertionError("missing --batch_size should fail")
+    finally:
+        sys.argv = old_argv
+
+
 if __name__ == "__main__":
     test_checkpoint_model_and_step_uses_parent_model_dir()
     test_dataset_dir_name_normalizes_msrvtt()
     test_default_eval_output_json_uses_zero_shot_dataset_dir()
     test_frame_sample_suffix_defaults_empty_nframes_to_2fps()
+    test_parse_args_requires_batch_size()
     print("ok")

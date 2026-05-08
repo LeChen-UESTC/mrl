@@ -16,6 +16,8 @@ bash scripts_sh/preprocess_downstreams.sh --nframes 8 --max_samples 10 --feature
 
 ## Train
 
+`--eval_batch_size` is required and is the only batch size used for training-time evaluation.
+
 ```bash
 CUDA_VISIBLE_DEVICES=1,2,3,4 \
 NPROC_PER_NODE=4 \
@@ -38,6 +40,7 @@ bash scripts_sh/train_vast.sh \
 ## Evaluate
 
 Standalone eval uses the same cache-first, raw-media fallback behavior.
+`--batch_size` is required for standalone eval.
 When `--nframes` is omitted, raw-video fallback uses the processor's default 2 fps sampling and
 the auto JSON filename ends with `_2fps.json`; fixed frame counts end with suffixes such as
 `_8frames.json`.

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from argparse import Namespace
+import contextlib
+import io
 import sys
 from pathlib import Path
 
@@ -8,9 +10,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
+import train_lora_volume as train_module
 from qwen_omni_retrieval.data.modality import normalize_train_modalities, parse_modalities
 from train_lora_volume import (
     apply_cli_overrides,
+    evaluate_all,
+    parse_args,
     prepare_training_names,
     resolve_training_modalities,
     total_train_steps,
@@ -163,6 +168,53 @@ def test_apply_cli_overrides_training_and_lora_args() -> None:
     assert cfg["lora"]["bias"] == "none"
 
 
+def test_parse_args_requires_eval_batch_size() -> None:
+    old_argv = sys.argv
+    stderr = io.StringIO()
+    try:
+        sys.argv = ["train_lora_volume.py", "--config", "configs/train/vast_lora_volume.yaml"]
+        try:
+            with contextlib.redirect_stderr(stderr):
+                parse_args()
+        except SystemExit as exc:
+            assert exc.code == 2
+            assert "--eval_batch_size" in stderr.getvalue()
+        else:
+            raise AssertionError("missing --eval_batch_size should fail")
+    finally:
+        sys.argv = old_argv
+
+
+def test_training_eval_batch_size_comes_only_from_training_cfg() -> None:
+    calls: list[int] = []
+    original = train_module.evaluate_one_dataset
+
+    def fake_evaluate_one_dataset(*args: object, batch_size: int, **kwargs: object) -> dict[str, float]:
+        calls.append(batch_size)
+        return {"r1": 0.0}
+
+    train_module.evaluate_one_dataset = fake_evaluate_one_dataset
+    try:
+        results = evaluate_all(
+            model=None,
+            cfg={
+                "training": {"eval_batch_size": 4, "num_workers": 2},
+                "loss": {},
+                "eval_datasets": [{"name": "msr_vtt", "batch_size": 1}],
+            },
+            processor=None,
+            device=None,
+            pad_id=0,
+            step=1,
+            wandb_run=None,
+        )
+    finally:
+        train_module.evaluate_one_dataset = original
+
+    assert calls == [4]
+    assert results == {"msr_vtt": {"r1": 0.0}}
+
+
 def test_total_train_steps_respects_epoch_count_and_step_cap() -> None:
     assert total_train_steps(epochs=3, batches_per_epoch=100, max_steps=0) == 300
     assert total_train_steps(epochs=3, batches_per_epoch=100, max_steps=120) == 120
@@ -201,6 +253,8 @@ if __name__ == "__main__":
     test_resolve_training_modalities_prefers_modalities_config()
     test_train_modalities_reject_missing_video_or_multiple_text_anchors()
     test_apply_cli_overrides_training_and_lora_args()
+    test_parse_args_requires_eval_batch_size()
+    test_training_eval_batch_size_comes_only_from_training_cfg()
     test_total_train_steps_respects_epoch_count_and_step_cap()
     test_prepare_training_names_sets_model_output_dir_and_wandb_name()
     print("ok")

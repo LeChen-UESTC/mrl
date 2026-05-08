@@ -60,7 +60,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target")
     parser.add_argument("--aux", default=None)
     parser.add_argument("--loss_mode", choices=["inverse_volume", "neg_log", "cosine"], default=None)
-    parser.add_argument("--batch_size", type=int, default=None)
+    parser.add_argument("--batch_size", type=int, required=True)
     parser.add_argument("--num_workers", type=int, default=None)
     parser.add_argument("--nframes", type=int, default=None)
     parser.add_argument("--output_json")

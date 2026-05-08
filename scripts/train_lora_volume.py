@@ -71,7 +71,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--max_steps", type=int, default=None)
     parser.add_argument("--batch_size", type=int, default=None)
-    parser.add_argument("--eval_batch_size", type=int, default=None)
+    parser.add_argument("--eval_batch_size", type=int, required=True)
     parser.add_argument("--eval_nframes", type=int, default=None)
     parser.add_argument("--num_workers", type=int, default=None)
     parser.add_argument("--learning_rate", type=float, default=None)
@@ -526,7 +526,7 @@ def evaluate_all(
             processor=processor,
             device=device,
             pad_id=pad_id,
-            batch_size=int(eval_cfg.get("batch_size", training_cfg.get("eval_batch_size", 2))),
+            batch_size=int(training_cfg["eval_batch_size"]),
             num_workers=int(eval_cfg.get("num_workers", training_cfg.get("num_workers", 2))),
             loss_cfg=loss_cfg,
         )
