@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from eval_retrieval import parse_args
 from eval_retrieval import resolve_eval_cache_dir
 from eval_retrieval import resolve_projection_config
+from eval_retrieval import should_wrap_model_for_eval_ddp
 from qwen_omni_retrieval.utils.naming import (
     checkpoint_model_and_step,
     dataset_dir_name,
@@ -154,6 +155,10 @@ def test_resolve_projection_config_falls_back_to_eval_config(tmp_path: Path) -> 
     assert config_path is None
 
 
+def test_eval_does_not_wrap_ddp_for_parameterless_model() -> None:
+    assert should_wrap_model_for_eval_ddp(torch.nn.Identity()) is False
+
+
 def test_parse_args_requires_batch_size() -> None:
     old_argv = sys.argv
     stderr = io.StringIO()
@@ -214,6 +219,7 @@ if __name__ == "__main__":
         test_resolve_projection_config_prefers_checkpoint_train_config(tmp_path / "proj_config")
         test_resolve_projection_config_can_infer_none_from_empty_state_dict(tmp_path / "proj_state")
         test_resolve_projection_config_falls_back_to_eval_config(tmp_path / "proj_eval")
+    test_eval_does_not_wrap_ddp_for_parameterless_model()
     test_parse_args_requires_batch_size()
     test_eval_sampling_cli_args_are_mutually_exclusive()
     print("ok")

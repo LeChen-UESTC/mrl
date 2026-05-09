@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data import DataLoader
 
 try:
@@ -115,6 +114,11 @@ def progress_iter(loader: DataLoader, *, dataset_name: str, dataset_source: str)
 
 def eval_log(stage: str, **payload: Any) -> None:
     print({"rank": get_rank(), "eval_stage": stage, **payload}, flush=True)
+
+
+def should_wrap_model_for_eval_ddp(model: Any) -> bool:
+    del model
+    return False
 
 
 def checkpoint_train_config_candidates(checkpoint_dir: str | Path | None) -> list[Path]:
@@ -478,15 +482,15 @@ def main() -> None:
         model, processor = load_eval_model(cfg, device)
         if is_main_process():
             print({"eval_stage": "model_loaded"}, flush=True)
-        if is_distributed():
-            model = DistributedDataParallel(
-                model,
-                device_ids=[device.index],
-                output_device=device.index,
-                find_unused_parameters=True,
+        if is_distributed() and is_main_process():
+            print(
+                {
+                    "eval_stage": "distributed_no_ddp",
+                    "reason": "evaluation uses replicated models, distributed sampler, and all_gather",
+                    "wrap_ddp": should_wrap_model_for_eval_ddp(model),
+                },
+                flush=True,
             )
-            if is_main_process():
-                print({"eval_stage": "ddp_wrapped"}, flush=True)
         metrics = run_eval(cfg, model, processor, device)
         if is_main_process():
             print(metrics)
