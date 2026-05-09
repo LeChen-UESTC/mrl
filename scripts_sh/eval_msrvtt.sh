@@ -21,7 +21,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-torchrun --nproc_per_node="${NPROC_PER_NODE}" \
+torchrun --master_port=29501 --nproc_per_node="${NPROC_PER_NODE}" \
   "${ROOT_DIR}/scripts/eval_retrieval.py" \
   --config "${ROOT_DIR}/configs/eval/msrvtt.yaml" \
   "${ARGS[@]}"

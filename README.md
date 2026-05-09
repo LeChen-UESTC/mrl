@@ -23,21 +23,21 @@ bash scripts_sh/preprocess_downstreams.sh --fps 2 --max_samples 10 --feature_dty
 Training-time eval accepts either `--eval_nframes` or `--eval_fps`; the two options are mutually exclusive.
 
 ```bash
-CUDA_VISIBLE_DEVICES=1,2,3,4 \
-NPROC_PER_NODE=4 \
+CUDA_VISIBLE_DEVICES=1 \
+NPROC_PER_NODE=1 \
 bash scripts_sh/train_vast.sh \
   --modality video audio vision_cap \
   --epochs 3 \
   --learning_rate 2e-4 \
-  --batch_size 16 \
+  --batch_size 8 \
   --eval_batch_size 4 \
   --eval_nframes 8 \
   --lora_r 32 \
   --lora_alpha 64 \
   --lora_dropout 0.05 \
   --do_eval false \
-  --eval_steps 500 \
-  --save_steps 500 \
+  --eval_steps 250 \
+  --save_steps 250 \
   --wandb_mode offline 
 ```
 
@@ -51,17 +51,17 @@ ends with `_2fps.json`; fixed frame counts end with suffixes such as `_12frames.
 
 ```bash
 PYTHONUNBUFFERED=1 \
-CUDA_VISIBLE_DEVICES=2,3,4 \
-NPROC_PER_NODE=3 \
+CUDA_VISIBLE_DEVICES=6,7 \
+NPROC_PER_NODE=2 \
 bash scripts_sh/eval_msrvtt.sh \
-  --checkpoint_dir /mnt/d/cl/mrl/outputs/models/train_vast_inverse_volume_video-audio-vision_cap_lr2e-4_lora-r32-a64-d0.05_proj-shared-1024/step_0000500 \
+  --checkpoint_dir /mnt/d/cl/mrl/outputs/models/train_vast_inverse_volume_video-audio-vision_cap_lr2e-4_lora-r32-a64-d0.05_proj-none-1024/step_0001500 \
   --query vision_cap \
   --target video \
   --aux audio \
   --nframes 12 \
-  --batch_size 4 \
+  --batch_size 8 \
   --num_workers 8 \
-  2>&1 | tee /mnt/d/cl/mrl/outputs/eval_msrvtt_step_0000500.log
+  2>&1 | tee /mnt/d/cl/mrl/outputs/eval_msrvtt_step_0001500.log
 ```
 
 ## Visualize

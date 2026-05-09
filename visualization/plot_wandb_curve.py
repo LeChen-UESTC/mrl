@@ -11,9 +11,9 @@ from pathlib import Path
 from typing import Any
 
 
-RUN_DIR = Path("/mnt/d/cl/mrl/wandb/offline-run-20260506_055038-8b0mj82x")
+RUN_DIR = Path("/Users/bytedance/Qwen2.5Omni/wandb/train_vast_inverse_volume_video-audio-vision_cap_lr2e-4_lora-r32-a64-d0.05_proj-shared-1024")
 METRICS = ["train/loss", "train/lr", "train/volume_mean"]
-OUT_DIR = Path("/mnt/d/cl/mrl/visualization/output")
+OUT_DIR = Path("/Users/bytedance/Qwen2.5Omni/visualization/output")
 
 
 def parse_args() -> argparse.Namespace:

@@ -117,6 +117,72 @@ def eval_log(stage: str, **payload: Any) -> None:
     print({"rank": get_rank(), "eval_stage": stage, **payload}, flush=True)
 
 
+def checkpoint_train_config_candidates(checkpoint_dir: str | Path | None) -> list[Path]:
+    if not checkpoint_dir:
+        return []
+    checkpoint_path = Path(checkpoint_dir)
+    return [
+        checkpoint_path / "train_config.json",
+        checkpoint_path.parent / "resolved_train_config.json",
+        checkpoint_path.parent / "train_config.json",
+    ]
+
+
+def load_checkpoint_train_config(checkpoint_dir: str | Path | None) -> tuple[dict[str, Any] | None, Path | None]:
+    for candidate in checkpoint_train_config_candidates(checkpoint_dir):
+        if candidate.exists():
+            return load_config(candidate), candidate
+    return None, None
+
+
+def infer_projection_config_from_state_dict(
+    projection_state: dict[str, torch.Tensor] | None,
+    fallback_cfg: dict[str, Any],
+) -> dict[str, Any] | None:
+    if projection_state is None:
+        return None
+    keys = list(projection_state.keys())
+    normalize = fallback_cfg.get("normalize", True)
+    if not keys:
+        return {"mode": "none", "normalize": normalize}
+
+    if "head.weight" in projection_state:
+        weight = projection_state["head.weight"]
+        return {
+            "mode": "shared",
+            "embed_dim": int(weight.shape[0]),
+            "normalize": normalize,
+        }
+
+    if any(key.startswith("heads.") for key in keys):
+        first_weight = next((value for key, value in projection_state.items() if key.endswith(".weight")), None)
+        inferred: dict[str, Any] = {
+            "mode": "per_modality",
+            "normalize": normalize,
+        }
+        if first_weight is not None:
+            inferred["embed_dim"] = int(first_weight.shape[0])
+        return inferred
+
+    return None
+
+
+def resolve_projection_config(
+    cfg: dict[str, Any],
+    projection_state: dict[str, torch.Tensor] | None = None,
+) -> tuple[dict[str, Any], str, str | None]:
+    fallback_cfg = dict(cfg.get("projection", {}))
+    checkpoint_cfg, checkpoint_cfg_path = load_checkpoint_train_config(cfg["eval"].get("checkpoint_dir"))
+    if checkpoint_cfg is not None and isinstance(checkpoint_cfg.get("projection"), dict):
+        return dict(checkpoint_cfg["projection"]), "checkpoint_train_config", str(checkpoint_cfg_path)
+
+    inferred_cfg = infer_projection_config_from_state_dict(projection_state, fallback_cfg)
+    if inferred_cfg is not None:
+        return inferred_cfg, "projection_state_dict", None
+
+    return fallback_cfg, "eval_config", None
+
+
 def load_eval_model(cfg: dict[str, Any], device: torch.device) -> tuple[QwenOmniRetrievalModel, Any]:
     checkpoint_dir = cfg["eval"].get("checkpoint_dir")
     eval_log(
@@ -143,7 +209,25 @@ def load_eval_model(cfg: dict[str, Any], device: torch.device) -> tuple[QwenOmni
     eval_log("infer_hidden_size_start")
     hidden_size = infer_hidden_size(thinker)
     eval_log("infer_hidden_size_done", hidden_size=hidden_size)
-    projection_cfg = cfg.get("projection", {})
+
+    projection_state = None
+    projection_path = Path(checkpoint_dir) / "projection_head.pt" if checkpoint_dir else None
+    if projection_path is not None:
+        eval_log("load_projection_check", projection_path=str(projection_path), exists=projection_path.exists())
+        if projection_path.exists():
+            eval_log("load_projection_state_start", projection_path=str(projection_path))
+            projection_state = torch.load(projection_path, map_location="cpu")
+            eval_log("load_projection_state_done", projection_path=str(projection_path))
+
+    projection_cfg, projection_cfg_source, projection_cfg_path = resolve_projection_config(cfg, projection_state)
+    eval_log(
+        "projection_config_resolved",
+        source=projection_cfg_source,
+        config_path=projection_cfg_path,
+        mode=projection_cfg.get("mode", "shared"),
+        embed_dim=projection_cfg.get("embed_dim"),
+        normalize=projection_cfg.get("normalize", True),
+    )
     eval_log(
         "build_projection_start",
         mode=projection_cfg.get("mode", "shared"),
@@ -157,13 +241,10 @@ def load_eval_model(cfg: dict[str, Any], device: torch.device) -> tuple[QwenOmni
         normalize=projection_cfg.get("normalize", True),
     )
     eval_log("build_projection_done")
-    if checkpoint_dir:
-        projection_path = Path(checkpoint_dir) / "projection_head.pt"
-        eval_log("load_projection_check", projection_path=str(projection_path), exists=projection_path.exists())
-        if projection_path.exists():
-            eval_log("load_projection_start", projection_path=str(projection_path))
-            projection.load_state_dict(torch.load(projection_path, map_location="cpu"))
-            eval_log("load_projection_done", projection_path=str(projection_path))
+    if projection_path is not None and projection_state is not None:
+        eval_log("load_projection_start", projection_path=str(projection_path))
+        projection.load_state_dict(projection_state)
+        eval_log("load_projection_done", projection_path=str(projection_path))
 
     eval_log("move_thinker_to_device_start", device=str(device))
     thinker = thinker.to(device)

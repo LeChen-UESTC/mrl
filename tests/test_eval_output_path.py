@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import sys
 from pathlib import Path
 
+import torch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -12,6 +14,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from eval_retrieval import parse_args
 from eval_retrieval import resolve_eval_cache_dir
+from eval_retrieval import resolve_projection_config
 from qwen_omni_retrieval.utils.naming import (
     checkpoint_model_and_step,
     dataset_dir_name,
@@ -95,6 +98,62 @@ def test_resolve_eval_cache_dir_uses_requested_cache_when_present(tmp_path: Path
     assert reason is None
 
 
+def test_resolve_projection_config_prefers_checkpoint_train_config(tmp_path: Path) -> None:
+    checkpoint_dir = tmp_path / "model" / "step_0001500"
+    checkpoint_dir.mkdir(parents=True)
+    (checkpoint_dir / "train_config.json").write_text(
+        json.dumps({"projection": {"mode": "none", "embed_dim": 1024, "normalize": True}}),
+        encoding="utf-8",
+    )
+
+    projection_cfg, source, config_path = resolve_projection_config(
+        {
+            "projection": {"mode": "shared", "embed_dim": 1024, "normalize": True},
+            "eval": {"checkpoint_dir": str(checkpoint_dir)},
+        },
+        projection_state={"head.weight": torch.empty(1024, 3584)},
+    )
+
+    assert projection_cfg["mode"] == "none"
+    assert projection_cfg["embed_dim"] == 1024
+    assert source == "checkpoint_train_config"
+    assert config_path == str(checkpoint_dir / "train_config.json")
+
+
+def test_resolve_projection_config_can_infer_none_from_empty_state_dict(tmp_path: Path) -> None:
+    checkpoint_dir = tmp_path / "model" / "step_0001500"
+    checkpoint_dir.mkdir(parents=True)
+
+    projection_cfg, source, config_path = resolve_projection_config(
+        {
+            "projection": {"mode": "shared", "embed_dim": 1024, "normalize": False},
+            "eval": {"checkpoint_dir": str(checkpoint_dir)},
+        },
+        projection_state={},
+    )
+
+    assert projection_cfg == {"mode": "none", "normalize": False}
+    assert source == "projection_state_dict"
+    assert config_path is None
+
+
+def test_resolve_projection_config_falls_back_to_eval_config(tmp_path: Path) -> None:
+    checkpoint_dir = tmp_path / "model" / "step_0001500"
+    checkpoint_dir.mkdir(parents=True)
+
+    projection_cfg, source, config_path = resolve_projection_config(
+        {
+            "projection": {"mode": "shared", "embed_dim": 1024, "normalize": True},
+            "eval": {"checkpoint_dir": str(checkpoint_dir)},
+        },
+        projection_state=None,
+    )
+
+    assert projection_cfg == {"mode": "shared", "embed_dim": 1024, "normalize": True}
+    assert source == "eval_config"
+    assert config_path is None
+
+
 def test_parse_args_requires_batch_size() -> None:
     old_argv = sys.argv
     stderr = io.StringIO()
@@ -152,6 +211,9 @@ if __name__ == "__main__":
         test_sampling_cache_dir_uses_requested_suffix(tmp_path)
         test_resolve_eval_cache_dir_falls_back_to_raw_when_requested_cache_missing(tmp_path)
         test_resolve_eval_cache_dir_uses_requested_cache_when_present(tmp_path)
+        test_resolve_projection_config_prefers_checkpoint_train_config(tmp_path / "proj_config")
+        test_resolve_projection_config_can_infer_none_from_empty_state_dict(tmp_path / "proj_state")
+        test_resolve_projection_config_falls_back_to_eval_config(tmp_path / "proj_eval")
     test_parse_args_requires_batch_size()
     test_eval_sampling_cli_args_are_mutually_exclusive()
     print("ok")

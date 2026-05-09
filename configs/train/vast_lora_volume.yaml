@@ -30,7 +30,7 @@ loss:
 
 training:
   dataset_name: vast
-  cache_dir: /mnt/d/cl/mrl/data_cache/vast_train
+  cache_dir: /mnt/d/cl/mrl/data_cache/vast_train_n_frames_2
   modalities:
     - vision_cap
     - video
